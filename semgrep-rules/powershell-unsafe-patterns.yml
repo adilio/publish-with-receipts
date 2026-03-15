@@ -191,3 +191,110 @@ rules:
     metadata:
       category: maintainability
       confidence: LOW
+
+  # ---------------------------------------------------------------------------
+  # RULE: Dynamic type compilation via Add-Type
+  # Add-Type -TypeDefinition with a variable value means C# code is being
+  # compiled at runtime from a potentially controlled string. If the string
+  # originates from user input or a network response, this is code injection.
+  # ---------------------------------------------------------------------------
+  - id: powershell-add-type-dynamic
+    patterns:
+      - pattern: |
+          Add-Type -TypeDefinition $...
+      - pattern: |
+          Add-Type -TypeDefinition ($... + ...)
+    message: |
+      Add-Type -TypeDefinition is compiling C# code from a runtime string.
+      If the string value is influenced by user input, environment variables,
+      or network content, this is a code injection vector. Prefer embedding
+      C# source as a literal here-string rather than assembling it at runtime.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      confidence: MEDIUM
+
+  # ---------------------------------------------------------------------------
+  # RULE: Assembly loading from a dynamic path
+  # [System.Reflection.Assembly]::Load / LoadFrom / LoadFile with a variable
+  # path can load arbitrary DLLs, including those placed by an attacker.
+  # ---------------------------------------------------------------------------
+  - id: powershell-assembly-load-dynamic
+    patterns:
+      - pattern: |
+          [System.Reflection.Assembly]::Load($...)
+      - pattern: |
+          [System.Reflection.Assembly]::LoadFrom($...)
+      - pattern: |
+          [System.Reflection.Assembly]::LoadFile($...)
+      - pattern: |
+          [Reflection.Assembly]::Load($...)
+      - pattern: |
+          [Reflection.Assembly]::LoadFrom($...)
+    message: |
+      Dynamic assembly loading detected. Loading assemblies from a variable path
+      at runtime can execute untrusted code if the path is attacker-controlled
+      (e.g., DLL planting in a writable directory). Ensure the assembly path is
+      validated against a known, trusted location and the loaded binary is
+      verified against an expected hash before loading.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-114: Process Control"
+      confidence: MEDIUM
+
+  # ---------------------------------------------------------------------------
+  # RULE: BITS transfer without hash verification
+  # Start-BitsTransfer is a legitimate download mechanism but is less commonly
+  # checked for integrity than IWR-based downloads. The file should be hashed
+  # after transfer and compared to a known-good value.
+  # ---------------------------------------------------------------------------
+  - id: powershell-bits-transfer-no-verify
+    patterns:
+      - pattern: |
+          Start-BitsTransfer -Source $... -Destination $dest
+          ...
+          & $dest
+      - pattern: |
+          Start-BitsTransfer -Source "..." -Destination $dest
+          ...
+          Start-Process $dest
+    message: |
+      A file downloaded via Start-BitsTransfer is being executed without
+      explicit integrity verification. Compute the SHA256 hash of the downloaded
+      file and compare it to a known-good value before executing it.
+    severity: ERROR
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      confidence: HIGH
+
+  # ---------------------------------------------------------------------------
+  # RULE: Unpinned RequiredModules in module manifest (.psd1)
+  # A bare module name with no version constraint is a floating dependency —
+  # any version can be resolved, including a newly-published malicious one.
+  # ---------------------------------------------------------------------------
+  - id: powershell-unpinned-required-module
+    patterns:
+      - pattern: |
+          RequiredModules = @( '...' )
+      - pattern: |
+          RequiredModules = @( "..." )
+    message: |
+      RequiredModules contains a bare module name with no version constraint.
+      Any version of this module will be resolved at install time, including
+      future versions that may contain malicious changes or break compatibility.
+      Use @{ ModuleName = 'Name'; RequiredVersion = '1.2.3' } for an exact pin,
+      or ModuleVersion + MaximumVersion for a bounded range.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-1104: Use of Unmaintained Third-Party Components"
+      confidence: MEDIUM
+      references:
+        - https://learn.microsoft.com/en-us/powershell/scripting/developer/module/how-to-write-a-powershell-module-manifest

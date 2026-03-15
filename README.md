@@ -27,18 +27,25 @@ publish-with-receipts/
 │   ├── sbom-generate/              # SBOM generation via Syft
 │   ├── vulnerability-scan/         # Vulnerability scanning via Grype
 │   ├── semgrep-scan/               # Pattern matching for unsafe code
+│   ├── dependency-pin-check/       # Floating dependency detection (.psd1 / .nuspec)
 │   ├── choco-naming-validation/    # Package naming checks
 │   ├── choco-integrity-check/      # Checksum and binary verification
 │   └── provenance-generate/        # SLSA-style provenance artifacts
 │
 ├── semgrep-rules/                  # Custom rules for PowerShell and Chocolatey patterns
-│   ├── powershell-unsafe-patterns.yml
-│   └── chocolatey-install-patterns.yml
+│   ├── powershell-unsafe-patterns.yml    # 12 rules covering download-execute, secrets, obfuscation, pinning
+│   └── chocolatey-install-patterns.yml   # 12 rules covering checksums, path/registry/service changes, pinning
 │
-└── docs/
-    ├── threat-model.md             # The threat vectors this project addresses
-    ├── tooling-decisions.md        # Why these tools and what the tradeoffs are
-    └── enterprise-integration.md   # Connecting outputs to SCA and cloud security platforms
+├── scripts/
+│   └── Invoke-LocalValidation.ps1  # Run all checks locally before pushing
+│
+├── docs/
+│   ├── threat-model.md             # The threat vectors this project addresses
+│   ├── tooling-decisions.md        # Why these tools and what the tradeoffs are
+│   ├── enterprise-integration.md   # Connecting outputs to SCA and cloud security platforms
+│   └── remediation-guide.md        # How to fix every finding type the pipeline surfaces
+│
+└── CONTRIBUTING.md                 # How to add rules, actions, and examples
 ```
 
 ## The Toolchain
@@ -50,6 +57,7 @@ publish-with-receipts/
 |[Syft](https://github.com/anchore/syft)                           |SBOM generation               |Software bill of materials for modules and packages|
 |[Grype](https://github.com/anchore/grype)                         |Vulnerability scanning        |CVE matching against generated SBOMs               |
 |[SARIF](https://sarifweb.azurewebsites.net/)                      |Reporting format              |Unified output that surfaces in GitHub PR reviews  |
+|Built-in (PowerShell)                                             |Dependency pin check          |Floating dependency detection in .psd1 and .nuspec |
 
 No vendor licenses. No proprietary platforms. Everything runs in GitHub Actions on public runners.
 
@@ -116,9 +124,30 @@ This repo is the companion material for the talk **“Provenance Before Publish:
 
 The talk covers the threat model, walks through the tooling decisions, and demonstrates the full pipeline end to end. But you don’t need to have seen the talk to use the repo. The docs folder covers the same ground.
 
+## Running checks locally
+
+Before pushing, run the local validation script to get the same feedback that CI will produce:
+
+```powershell
+# Run all checks against both example packages
+./scripts/Invoke-LocalValidation.ps1 -Target both
+
+# Quick check (PowerShell only, skip SBOM/Grype)
+./scripts/Invoke-LocalValidation.ps1 -Target powershell -SkipSBOM
+
+# Fail on any finding (mirrors enforce mode)
+./scripts/Invoke-LocalValidation.ps1 -Target both -FailOnFindings
+```
+
+Required tools: `Install-Module PSScriptAnalyzer`, `pip install semgrep`, and optionally [Syft](https://github.com/anchore/syft) and [Grype](https://github.com/anchore/grype).
+
+## Remediating findings
+
+See [docs/remediation-guide.md](docs/remediation-guide.md) for copy-paste fixes for every finding type the pipeline can surface — PSScriptAnalyzer rules, Semgrep rules, dependency pinning issues, and Grype CVEs.
+
 ## Contributing
 
-Issues and PRs welcome. If you’ve got a threat vector that isn’t covered, a tool that fits the pipeline better, or a Semgrep rule that catches something the current set misses, open an issue and let’s talk about it.
+Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add Semgrep rules, composite actions, and example anti-patterns. If you’ve got a threat vector that isn’t covered, a tool that fits the pipeline better, or a rule that catches something the current set misses, open an issue and let’s talk about it.
 
 ## License
 

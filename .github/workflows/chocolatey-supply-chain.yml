@@ -78,7 +78,25 @@ jobs:
           verify-checksums-live: 'false'
 
       # -----------------------------------------------------------------------
-      # 4. Semgrep — Chocolatey-specific rules
+      # 4. Dependency Pin Check
+      #
+      # Validates that NuGet dependencies in the .nuspec file are pinned to
+      # exact versions or bounded ranges, not open-ended minimum constraints.
+      # Also scans any .psd1 manifests present in the package directory.
+      #
+      # Chocolatey dependency chains run install scripts with elevated privileges;
+      # a floating transitive dependency is therefore a security concern,
+      # not just a reproducibility one.
+      # -----------------------------------------------------------------------
+      - name: Dependency pin check
+        uses: ./actions/dependency-pin-check
+        with:
+          psd1-path: examples/chocolatey-package
+          nuspec-path: examples/chocolatey-package
+          fail-on-unpinned: 'false'
+
+      # -----------------------------------------------------------------------
+      # 5. Semgrep — Chocolatey-specific rules
       #
       # Custom rules in semgrep-rules/chocolatey-install-patterns.yml detect:
       #   - Direct Invoke-WebRequest bypassing Chocolatey's checksum helpers
@@ -159,6 +177,7 @@ jobs:
           echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Naming Validation | Logged to step output |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Integrity Check | Logged to step output |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Dependency Pin Check | Logged to step output |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Semgrep | \`semgrep-chocolatey-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
           echo "| SBOM (Syft) | \`chocolatey-package-sbom.cdx.json\` → Artifacts |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Vulnerability Scan (Grype) | \`grype-chocolatey-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
