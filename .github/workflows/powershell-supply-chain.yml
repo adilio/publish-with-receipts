@@ -39,7 +39,30 @@ jobs:
           fetch-depth: 0  # Full history for accurate provenance
 
       # -----------------------------------------------------------------------
-      # 2. PSScriptAnalyzer — PowerShell static analysis
+      # 2. Pester — Unit tests
+      #
+      # Runs the Pester test suite for the ExampleModule. These tests verify
+      # that the module loads and its exported functions behave correctly.
+      # Passing these tests is necessary but not sufficient for supply chain
+      # safety — that's what the pipeline steps below are for.
+      #
+      # Az.Accounts is installed here because ExampleModule.psd1 declares it
+      # as a RequiredModule (demonstrating the floating-dependency anti-pattern).
+      # -----------------------------------------------------------------------
+      - name: Run Pester tests
+        shell: pwsh
+        run: |
+          Install-Module -Name Pester -MinimumVersion 5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Install-Module -Name Az.Accounts -Force -SkipPublisherCheck -Scope CurrentUser -AllowClobber
+
+          $result = Invoke-Pester -Path examples/powershell-module/tests -PassThru -Output Detailed
+          if ($result.FailedCount -gt 0) {
+            Write-Error "Pester: $($result.FailedCount) test(s) failed."
+            exit 1
+          }
+
+      # -----------------------------------------------------------------------
+      # 3. PSScriptAnalyzer — PowerShell static analysis
       #
       # Checks for code quality issues, unsafe patterns, and best practice
       # violations. Findings are uploaded to GitHub Code Scanning as SARIF
@@ -57,7 +80,7 @@ jobs:
           fail-on-findings: 'false'
 
       # -----------------------------------------------------------------------
-      # 3. Semgrep — Pattern-based scanning with custom rules
+      # 4. Semgrep — Pattern-based scanning with custom rules
       #
       # Custom rules in semgrep-rules/powershell-unsafe-patterns.yml detect:
       #   - Download-and-execute patterns
@@ -78,7 +101,7 @@ jobs:
           severity: WARNING
 
       # -----------------------------------------------------------------------
-      # 4. SBOM Generation — Syft
+      # 5. SBOM Generation — Syft
       #
       # Generates a CycloneDX JSON SBOM that captures all module files and
       # declared dependencies at build time. The SBOM is the answer to
@@ -93,7 +116,7 @@ jobs:
           upload-artifact: 'true'
 
       # -----------------------------------------------------------------------
-      # 5. Vulnerability Scan — Grype
+      # 6. Vulnerability Scan — Grype
       #
       # Scans the SBOM against known vulnerability databases (NVD, GitHub
       # Advisory Database, etc.). Results are uploaded as SARIF and JSON.
@@ -112,7 +135,7 @@ jobs:
           artifact-name: powershell-vulnerability-scan
 
       # -----------------------------------------------------------------------
-      # 6. Provenance Generation
+      # 7. Provenance Generation
       #
       # Generates a SLSA-style provenance document that records:
       #   - Source repo and commit SHA
@@ -137,7 +160,7 @@ jobs:
           artifact-upload-name: powershell-module-provenance
 
       # -----------------------------------------------------------------------
-      # 7. Summary
+      # 8. Summary
       # -----------------------------------------------------------------------
       - name: Write job summary
         if: always()
@@ -147,6 +170,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Step | Artifact |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|----------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Pester Tests | Logged to step output |" >> "$GITHUB_STEP_SUMMARY"
           echo "| PSScriptAnalyzer | \`psscriptanalyzer-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Semgrep | \`semgrep-powershell-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
           echo "| SBOM (Syft) | \`powershell-module-sbom.cdx.json\` → Artifacts |" >> "$GITHUB_STEP_SUMMARY"
