@@ -1,0 +1,156 @@
+name: PowerShell Supply Chain Security
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'examples/powershell-module/**'
+      - '.github/workflows/powershell-supply-chain.yml'
+      - 'actions/**'
+      - 'semgrep-rules/**'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'examples/powershell-module/**'
+      - '.github/workflows/powershell-supply-chain.yml'
+      - 'actions/**'
+      - 'semgrep-rules/**'
+  workflow_dispatch:
+
+# Required for SARIF upload to GitHub Code Scanning and for GitHub Attestations.
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+  actions: read
+
+jobs:
+  supply-chain:
+    name: Supply Chain Security — PowerShell Module
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for accurate provenance
+
+      # -----------------------------------------------------------------------
+      # 2. PSScriptAnalyzer — PowerShell static analysis
+      #
+      # Checks for code quality issues, unsafe patterns, and best practice
+      # violations. Findings are uploaded to GitHub Code Scanning as SARIF
+      # and appear as PR annotations in the Security tab.
+      #
+      # This step is non-blocking by default (fail-on-findings: 'false').
+      # Increase to 'true' when you're ready to enforce the rules.
+      # -----------------------------------------------------------------------
+      - name: PSScriptAnalyzer
+        uses: ./actions/ps-script-analysis
+        with:
+          path: examples/powershell-module/ExampleModule
+          severity-threshold: Warning
+          sarif-output: psscriptanalyzer-results.sarif
+          fail-on-findings: 'false'
+
+      # -----------------------------------------------------------------------
+      # 3. Semgrep — Pattern-based scanning with custom rules
+      #
+      # Custom rules in semgrep-rules/powershell-unsafe-patterns.yml detect:
+      #   - Download-and-execute patterns
+      #   - Hardcoded secrets (API keys, tokens, passwords)
+      #   - TLS certificate validation bypass
+      #   - Base64-encoded command execution
+      #   - ScriptsToProcess usage in module manifests
+      #
+      # Semgrep findings are also uploaded as SARIF to GitHub Code Scanning.
+      # -----------------------------------------------------------------------
+      - name: Semgrep — Custom PowerShell rules
+        uses: ./actions/semgrep-scan
+        with:
+          path: examples/powershell-module
+          rules: semgrep-rules/powershell-unsafe-patterns.yml
+          sarif-output: semgrep-powershell-results.sarif
+          fail-on-findings: 'false'
+          severity: WARNING
+
+      # -----------------------------------------------------------------------
+      # 4. SBOM Generation — Syft
+      #
+      # Generates a CycloneDX JSON SBOM that captures all module files and
+      # declared dependencies at build time. The SBOM is the answer to
+      # "what's in this package?" and serves as input to the vulnerability scan.
+      # -----------------------------------------------------------------------
+      - name: Generate SBOM
+        uses: ./actions/sbom-generate
+        with:
+          path: examples/powershell-module/ExampleModule
+          output-file: powershell-module-sbom.cdx.json
+          artifact-name: powershell-module-sbom
+          upload-artifact: 'true'
+
+      # -----------------------------------------------------------------------
+      # 5. Vulnerability Scan — Grype
+      #
+      # Scans the SBOM against known vulnerability databases (NVD, GitHub
+      # Advisory Database, etc.). Results are uploaded as SARIF and JSON.
+      #
+      # fail-on-severity is empty by default — adjust to 'critical' or 'high'
+      # to block merges on known vulnerabilities.
+      # -----------------------------------------------------------------------
+      - name: Vulnerability scan
+        uses: ./actions/vulnerability-scan
+        with:
+          sbom-path: powershell-module-sbom.cdx.json
+          sarif-output: grype-powershell-results.sarif
+          json-output: grype-powershell-results.json
+          fail-on-severity: ''
+          upload-artifact: 'true'
+          artifact-name: powershell-vulnerability-scan
+
+      # -----------------------------------------------------------------------
+      # 6. Provenance Generation
+      #
+      # Generates a SLSA-style provenance document that records:
+      #   - Source repo and commit SHA
+      #   - Workflow reference and run ID
+      #   - Build timestamp
+      #   - SHA256 hash of the module directory
+      #
+      # Together with the SBOM and SARIF results, this answers the three
+      # provenance questions:
+      #   SBOM       → What's in it?
+      #   SARIF      → What did we check?
+      #   Provenance → When, where, and how was it built?
+      # -----------------------------------------------------------------------
+      - name: Generate provenance
+        uses: ./actions/provenance-generate
+        with:
+          artifact-path: examples/powershell-module/ExampleModule
+          artifact-name: ExampleModule ${{ github.sha }}
+          sbom-path: powershell-module-sbom.cdx.json
+          provenance-output: powershell-module-provenance.json
+          upload-artifact: 'true'
+          artifact-upload-name: powershell-module-provenance
+
+      # -----------------------------------------------------------------------
+      # 7. Summary
+      # -----------------------------------------------------------------------
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## PowerShell Supply Chain Security Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Step | Artifact |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|----------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| PSScriptAnalyzer | \`psscriptanalyzer-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Semgrep | \`semgrep-powershell-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SBOM (Syft) | \`powershell-module-sbom.cdx.json\` → Artifacts |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Vulnerability Scan (Grype) | \`grype-powershell-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Provenance | \`powershell-module-provenance.json\` → Artifacts |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "View findings in the **Security → Code Scanning** tab of this repository." >> "$GITHUB_STEP_SUMMARY"

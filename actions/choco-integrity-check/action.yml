@@ -1,0 +1,137 @@
+name: 'Chocolatey Integrity Check'
+description: |
+  Validates the integrity controls for a Chocolatey package:
+  - Every external URL in the install script has a SHA256 checksum
+  - Checksums use strong algorithms (not MD5/SHA1)
+  - Embedded binaries in tools/ are listed in VERIFICATION.txt
+  - VERIFICATION.txt contains checksum values (not placeholder text)
+
+inputs:
+  tools-path:
+    description: 'Path to the Chocolatey package tools/ directory.'
+    required: true
+    default: 'tools'
+  fail-on-missing-checksum:
+    description: 'Whether to fail if any external download lacks a checksum.'
+    required: false
+    default: 'true'
+  fail-on-weak-algorithm:
+    description: 'Whether to fail if MD5 or SHA1 checksums are used.'
+    required: false
+    default: 'true'
+  verify-checksums-live:
+    description: |
+      Whether to actually download and verify checksums against live URLs.
+      This adds significant time and requires network access. Disabled by default.
+    required: false
+    default: 'false'
+
+outputs:
+  issues-found:
+    description: 'Whether any integrity issues were found (true/false).'
+    value: ${{ steps.check.outputs.issues-found }}
+  issue-count:
+    description: 'Number of integrity issues found.'
+    value: ${{ steps.check.outputs.issue-count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run integrity checks
+      id: check
+      shell: pwsh
+      run: |
+        $toolsPath    = '${{ inputs.tools-path }}'
+        $failMissing  = '${{ inputs.fail-on-missing-checksum }}' -eq 'true'
+        $failWeak     = '${{ inputs.fail-on-weak-algorithm }}' -eq 'true'
+        $verifyLive   = '${{ inputs.verify-checksums-live }}' -eq 'true'
+
+        $issues = @()
+
+        # --- Check chocolateyInstall.ps1 ---
+        $installScript = Join-Path $toolsPath 'chocolateyInstall.ps1'
+
+        if (-not (Test-Path $installScript)) {
+          Write-Warning "chocolateyInstall.ps1 not found at: $installScript"
+        } else {
+          $content = Get-Content $installScript -Raw
+
+          # Find Install-ChocolateyPackage / Get-ChocolateyWebFile calls without checksums
+          $hasUrl      = $content -match 'url\s*=\s*[''"]https?://'
+          $hasChecksum = $content -match 'checksum\s*='
+
+          if ($hasUrl -and -not $hasChecksum) {
+            $issues += "chocolateyInstall.ps1: External URL(s) present but no checksum found."
+            Write-Host "::error::chocolateyInstall.ps1: External URL found without a corresponding checksum."
+          }
+
+          # Check for weak checksum algorithms
+          if ($content -match "checksumType\s*=\s*['""]?(md5|sha1)['""]?") {
+            $issues += "chocolateyInstall.ps1: Weak checksum algorithm detected (MD5 or SHA1). Use SHA256."
+            Write-Host "::error::chocolateyInstall.ps1: MD5 or SHA1 checksum algorithm detected. Use SHA256 or stronger."
+          }
+
+          # Check for direct Invoke-WebRequest outside of official helpers
+          $iwrMatches = [regex]::Matches($content, 'Invoke-WebRequest\s+-Uri\s+[''"]?https?://')
+          if ($iwrMatches.Count -gt 0) {
+            $issues += "chocolateyInstall.ps1: $($iwrMatches.Count) direct Invoke-WebRequest call(s) found outside Chocolatey helpers."
+            Write-Host "::warning::chocolateyInstall.ps1: $($iwrMatches.Count) Invoke-WebRequest call(s) detected outside Chocolatey's built-in helpers. These bypass checksum enforcement."
+          }
+        }
+
+        # --- Check VERIFICATION.txt ---
+        $verificationFile = Join-Path $toolsPath 'VERIFICATION.txt'
+        $embeddedBinaries = Get-ChildItem -Path $toolsPath -Include '*.exe','*.msi','*.zip','*.7z' -ErrorAction SilentlyContinue
+
+        if ($embeddedBinaries.Count -gt 0) {
+          if (-not (Test-Path $verificationFile)) {
+            $issues += "VERIFICATION.txt missing but embedded binaries found: $($embeddedBinaries.Name -join ', ')"
+            Write-Host "::error::VERIFICATION.txt is missing but the tools/ directory contains binaries: $($embeddedBinaries.Name -join ', ')"
+          } else {
+            $verification = Get-Content $verificationFile -Raw
+
+            # Check that VERIFICATION.txt contains actual checksums (not placeholders)
+            $hasChecksums = $verification -match '[0-9a-fA-F]{64}'  # SHA256 pattern
+            if (-not $hasChecksums) {
+              $issues += "VERIFICATION.txt exists but contains no SHA256 checksums."
+              Write-Host "::error::VERIFICATION.txt does not contain any SHA256 checksums (64-character hex strings). Add checksums for all embedded binaries."
+            }
+
+            # Check that each embedded binary is mentioned in VERIFICATION.txt
+            foreach ($binary in $embeddedBinaries) {
+              if ($verification -notmatch [regex]::Escape($binary.Name)) {
+                $issues += "VERIFICATION.txt: No entry found for embedded binary '$($binary.Name)'."
+                Write-Host "::warning::VERIFICATION.txt: No entry found for '$($binary.Name)'. Add checksum and source URL for all embedded binaries."
+              }
+            }
+          }
+        } elseif (Test-Path $verificationFile) {
+          Write-Host "VERIFICATION.txt present (no embedded binaries to verify against)."
+        }
+
+        # --- Live checksum verification (optional) ---
+        if ($verifyLive) {
+          Write-Host "Live checksum verification is enabled — this may take several minutes..."
+          # TODO: Parse URLs and checksums from install script, download, and verify
+          Write-Warning "Live verification not yet implemented. Set verify-checksums-live to 'false'."
+        }
+
+        # --- Results ---
+        $issueCount = $issues.Count
+        "issues-found=$($issueCount -gt 0)" >> $env:GITHUB_OUTPUT
+        "issue-count=$issueCount"            >> $env:GITHUB_OUTPUT
+
+        if ($issues.Count -gt 0) {
+          Write-Host "Integrity issues found ($($issues.Count)):"
+          $issues | ForEach-Object { Write-Host "  - $_" }
+
+          $shouldFail = ($failMissing -and ($issues -match 'without a checksum|missing but embedded')) -or
+                        ($failWeak   -and ($issues -match 'Weak checksum'))
+
+          if ($shouldFail) {
+            Write-Error "Integrity check failed. Review the issues above."
+            exit 1
+          }
+        } else {
+          Write-Host "All integrity checks passed."
+        }

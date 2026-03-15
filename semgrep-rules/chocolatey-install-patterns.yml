@@ -1,0 +1,191 @@
+rules:
+
+  # ---------------------------------------------------------------------------
+  # RULE: Unverified external download via Invoke-WebRequest
+  # Chocolatey's built-in helpers (Install-ChocolateyPackage, Get-ChocolateyWebFile)
+  # enforce checksum validation. Direct use of Invoke-WebRequest bypasses this.
+  # ---------------------------------------------------------------------------
+  - id: choco-unverified-download
+    patterns:
+      - pattern: |
+          Invoke-WebRequest -Uri $... -OutFile $...
+      - pattern: |
+          Invoke-WebRequest -Uri "..." -OutFile $...
+      - pattern: |
+          IWR -Uri $... -OutFile $...
+    message: |
+      Direct use of Invoke-WebRequest to download files bypasses Chocolatey's
+      built-in checksum enforcement. Use Install-ChocolateyPackage or
+      Get-ChocolateyWebFile instead — these helpers require checksums and
+      integrate with Chocolatey's security features. If Invoke-WebRequest is
+      necessary, verify the downloaded file against a known SHA256 hash before
+      executing it.
+    severity: ERROR
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      confidence: HIGH
+
+  # ---------------------------------------------------------------------------
+  # RULE: Install-ChocolateyPackage without checksum
+  # Even the official helper can be called incorrectly — missing the checksum
+  # argument means downloads are not integrity-verified.
+  # ---------------------------------------------------------------------------
+  - id: choco-install-package-no-checksum
+    patterns:
+      - pattern: |
+          Install-ChocolateyPackage @{
+            ...
+            url = ...
+            ...
+          }
+      - pattern: |
+          Install-ChocolateyPackage -PackageName $... -Url $... -SilentArgs $...
+    pattern-not:
+      - pattern: |
+          Install-ChocolateyPackage @{
+            ...
+            checksum = ...
+            ...
+          }
+      - pattern: |
+          Install-ChocolateyPackage -PackageName $... -Url $... -Checksum $...
+    message: |
+      Install-ChocolateyPackage is called without a checksum argument. Without a
+      checksum, the downloaded binary is not integrity-verified at install time.
+      Add 'checksum' (SHA256) and 'checksumType = sha256' to the argument hashtable.
+      MD5 and SHA1 are not acceptable — use SHA256 or better.
+    severity: ERROR
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-354: Improper Validation of Integrity Check Value"
+      confidence: MEDIUM
+
+  # ---------------------------------------------------------------------------
+  # RULE: Execution of downloaded content
+  # Detects patterns where a downloaded file is immediately invoked/executed.
+  # ---------------------------------------------------------------------------
+  - id: choco-execute-downloaded-content
+    patterns:
+      - pattern: |
+          $... = Join-Path $toolsDir ...
+          Invoke-WebRequest -Uri $... -OutFile $...
+          & $...
+      - pattern: |
+          Invoke-WebRequest -Uri $... -OutFile $dest
+          ...
+          Start-Process $dest
+      - pattern: |
+          Invoke-WebRequest -Uri $... -OutFile $dest
+          ...
+          & $dest
+    message: |
+      A downloaded file is being executed immediately after download without
+      integrity verification. Verify the file against a known SHA256 hash before
+      executing it. Running unverified downloaded binaries with admin privileges
+      (which Chocolatey scripts have) is a critical supply chain risk.
+    severity: ERROR
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      confidence: HIGH
+
+  # ---------------------------------------------------------------------------
+  # RULE: System PATH modification
+  # Flags Install-ChocolateyPath calls, which should be documented and reversed
+  # in the corresponding uninstall script.
+  # ---------------------------------------------------------------------------
+  - id: choco-path-modification-undocumented
+    pattern: |
+      Install-ChocolateyPath ...
+    message: |
+      System PATH is being modified. Ensure this change is documented in
+      VERIFICATION.txt and is reversed by the corresponding chocolateyUninstall.ps1
+      using Uninstall-ChocolateyPath. Undocumented PATH modifications are a
+      maintainability issue and can be a security concern in shared environments.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: maintainability
+      confidence: HIGH
+
+  # ---------------------------------------------------------------------------
+  # RULE: Registry write
+  # Flags direct registry writes that should be documented and cleaned up.
+  # ---------------------------------------------------------------------------
+  - id: choco-registry-write-undocumented
+    patterns:
+      - pattern: |
+          New-Item -Path "HKLM:\..." ...
+      - pattern: |
+          Set-ItemProperty -Path "HKLM:\..." ...
+      - pattern: |
+          New-ItemProperty -Path "HKLM:\..." ...
+    message: |
+      A registry key is being created or modified under HKLM. Registry writes made
+      during install should be documented and removed during uninstall. Ensure the
+      corresponding chocolateyUninstall.ps1 removes these registry entries.
+      Undocumented registry modifications reduce trust and make the package harder
+      to fully uninstall.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: maintainability
+      confidence: MEDIUM
+
+  # ---------------------------------------------------------------------------
+  # RULE: Hardcoded internal URL in install script
+  # Internal URLs, share paths, and API endpoints should not appear in packages
+  # that may be published to the community repo.
+  # ---------------------------------------------------------------------------
+  - id: choco-hardcoded-internal-url
+    patterns:
+      - pattern: |
+          $... = "https://internal-..."
+      - pattern: |
+          $... = "http://internal-..."
+      - pattern: |
+          $... = "\\\\corp...."
+      - pattern: |
+          UpdateServer = "https://internal-..."
+    message: |
+      A hardcoded internal URL or network path has been detected. Internal URLs
+      (e.g., intranet servers, internal update endpoints, UNC paths) should not
+      appear in packages published to the Chocolatey community repository or any
+      external registry. Use package parameters ($env:ChocolateyPackageParameters)
+      or configuration files to pass environment-specific values.
+    severity: ERROR
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-615: Inclusion of Sensitive Information in Source Code Comments"
+      confidence: MEDIUM
+
+  # ---------------------------------------------------------------------------
+  # RULE: MD5 or SHA1 checksum usage
+  # Weak hash algorithms should not be used for integrity verification.
+  # ---------------------------------------------------------------------------
+  - id: choco-weak-checksum-algorithm
+    patterns:
+      - pattern: |
+          checksumType = "md5"
+      - pattern: |
+          checksumType = "sha1"
+      - pattern: |
+          ChecksumType = "md5"
+      - pattern: |
+          ChecksumType = "sha1"
+    message: |
+      MD5 and SHA1 are cryptographically weak and should not be used for
+      integrity verification. Use SHA256 (checksumType = 'sha256') or SHA512.
+      Chocolatey itself warns about MD5/SHA1 usage; this rule enforces that
+      warning at pipeline time.
+    severity: ERROR
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+      confidence: HIGH

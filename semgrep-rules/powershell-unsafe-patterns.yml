@@ -1,0 +1,193 @@
+rules:
+
+  # ---------------------------------------------------------------------------
+  # RULE: Download-and-execute pattern
+  # Detects scripts that fetch remote content and execute it via Invoke-Expression.
+  # This is the canonical supply chain attack vector for PowerShell: an attacker
+  # who controls the remote endpoint can execute arbitrary code.
+  # ---------------------------------------------------------------------------
+  - id: powershell-download-execute
+    patterns:
+      - pattern: |
+          $... = Invoke-WebRequest ...
+          ...
+          Invoke-Expression $...
+      - pattern: |
+          $... = Invoke-RestMethod ...
+          ...
+          Invoke-Expression $...
+      - pattern: |
+          Invoke-Expression (Invoke-WebRequest ...)
+      - pattern: |
+          Invoke-Expression (Invoke-RestMethod ...)
+      - pattern: |
+          IEX (Invoke-WebRequest ...)
+      - pattern: |
+          IEX (IWR ...)
+    message: |
+      Download-and-execute pattern detected. The result of a web request is being
+      passed to Invoke-Expression, which executes it as PowerShell code. An attacker
+      who controls the remote URL or the server can execute arbitrary code in the
+      context of the calling user. Use local scripts verified against a known hash
+      instead of fetching and executing remote content.
+    severity: ERROR
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-494: Download of Code Without Integrity Check"
+      confidence: HIGH
+      references:
+        - https://owasp.org/www-community/attacks/Code_Injection
+
+  # ---------------------------------------------------------------------------
+  # RULE: Hardcoded secrets — API keys and tokens
+  # Matches common patterns for hardcoded credentials assigned to variables.
+  # ---------------------------------------------------------------------------
+  - id: powershell-hardcoded-secret
+    patterns:
+      - pattern: |
+          $ApiKey = "..."
+      - pattern: |
+          $Token = "..."
+      - pattern: |
+          $Secret = "..."
+      - pattern: |
+          $Password = "..."
+      - pattern: |
+          $AccessKey = "..."
+      - pattern: |
+          $ClientSecret = "..."
+    pattern-not:
+      - pattern: |
+          $ApiKey = $env:...
+      - pattern: |
+          $Token = $env:...
+      - pattern: |
+          $Secret = $env:...
+      - pattern: |
+          $Password = $env:...
+    message: |
+      Potential hardcoded secret detected. Credentials, API keys, and tokens should
+      never be stored in source code. Use environment variables, GitHub Actions
+      secrets, Azure Key Vault, or another secrets management solution. Hardcoded
+      secrets committed to public repositories are frequently harvested by automated
+      scanners and can compromise production systems.
+    severity: ERROR
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      confidence: MEDIUM
+
+  # ---------------------------------------------------------------------------
+  # RULE: Disable TLS/certificate validation
+  # Matches overrides to ServerCertificateValidationCallback that accept all certs.
+  # This opens any subsequent HTTPS connection to MITM attacks.
+  # ---------------------------------------------------------------------------
+  - id: powershell-disable-certificate-validation
+    pattern: |
+      [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    message: |
+      TLS certificate validation is being disabled by setting
+      ServerCertificateValidationCallback to always return $true. This allows
+      man-in-the-middle attacks against any HTTPS connection made in this session.
+      Remove this line and ensure your endpoints present valid, trusted certificates.
+    severity: ERROR
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-295: Improper Certificate Validation"
+      confidence: HIGH
+
+  # ---------------------------------------------------------------------------
+  # RULE: Base64 encoded command execution
+  # Matches -EncodedCommand invocations and manual base64-decode-and-execute.
+  # Encoding is a common obfuscation technique used to hide malicious payloads.
+  # ---------------------------------------------------------------------------
+  - id: powershell-encoded-command
+    patterns:
+      - pattern: |
+          powershell.exe -EncodedCommand ...
+      - pattern: |
+          powershell -EncodedCommand ...
+      - pattern: |
+          pwsh -EncodedCommand ...
+      - pattern: |
+          powershell.exe -enc ...
+      - pattern: |
+          Invoke-Expression ([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String(...)))
+    message: |
+      Base64-encoded command execution detected. Using -EncodedCommand or manually
+      decoding base64 to execute commands is a common obfuscation technique. While
+      there are legitimate uses (e.g., passing complex arguments), this pattern
+      should be reviewed and suppressed with a justification comment if intentional.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-116: Improper Encoding or Escaping of Output"
+      confidence: MEDIUM
+
+  # ---------------------------------------------------------------------------
+  # RULE: Invoke-Expression usage
+  # Broad catch for any use of Invoke-Expression or its alias IEX.
+  # Lower severity than download-execute since there are legitimate uses.
+  # ---------------------------------------------------------------------------
+  - id: powershell-invoke-expression
+    patterns:
+      - pattern: Invoke-Expression ...
+      - pattern: IEX ...
+    message: |
+      Invoke-Expression (IEX) executes a string as PowerShell code at runtime.
+      If any part of the string comes from user input, network responses, or
+      environment variables, this is a code injection risk. Prefer direct
+      function calls or script blocks over dynamic string execution.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      confidence: LOW
+
+  # ---------------------------------------------------------------------------
+  # RULE: ScriptsToProcess in module manifest
+  # Detects use of ScriptsToProcess which runs scripts in the caller's scope
+  # before module import — the same mechanism used in typosquatting attacks.
+  # ---------------------------------------------------------------------------
+  - id: powershell-scripts-to-process
+    pattern: |
+      ScriptsToProcess = @(...)
+    message: |
+      ScriptsToProcess in a module manifest causes listed scripts to run in the
+      caller's session scope before the module is imported. This mechanism was
+      used by Aqua Security researchers in a PowerShell Gallery typosquatting
+      proof-of-concept (2023) to execute code at import time. Unless explicitly
+      required, prefer dot-sourcing scripts from within the module's .psm1 file.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: security
+      confidence: HIGH
+      references:
+        - https://blog.aquasec.com/typosquatting-attacks-on-powershell-gallery
+
+  # ---------------------------------------------------------------------------
+  # RULE: Invoke-WebRequest without -UseBasicParsing on older PowerShell
+  # Minor quality/reliability issue that also indicates unfamiliarity with
+  # cross-platform PowerShell; included as a low-severity informational rule.
+  # ---------------------------------------------------------------------------
+  - id: powershell-webrequest-basic-parsing
+    pattern: |
+      Invoke-WebRequest -Uri ...
+    pattern-not: |
+      Invoke-WebRequest -Uri ... -UseBasicParsing
+    message: |
+      Consider adding -UseBasicParsing to Invoke-WebRequest calls for
+      cross-platform compatibility and to avoid IE first-run errors in
+      non-interactive sessions. On PowerShell 6+, this is the default,
+      but it should be explicit for 5.1 compatibility.
+    severity: INFO
+    languages: [generic]
+    metadata:
+      category: maintainability
+      confidence: LOW

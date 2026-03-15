@@ -1,0 +1,32 @@
+VERIFICATION
+
+Verification is intended to assist the Chocolatey moderators and community
+in verifying that this package's contained software is legitimate.
+
+Package can be verified like this:
+
+1. Go to the download page for the software at:
+   http://example.com/downloads/
+
+2. Download the software
+
+INTENTIONAL FLAW: This VERIFICATION.txt is intentionally incomplete.
+The choco-integrity-check action flags the following missing elements:
+  - No checksum provided for either the x86 or x64 binary
+  - No specific binary filenames listed
+  - Source URL is a generic download page, not a direct link to the binary
+  - No algorithm specified (SHA256 is required; MD5/SHA1 are not acceptable)
+
+A complete VERIFICATION.txt would look like:
+
+---
+FILE 1: example-tool-2.1.0-x64.exe
+  Downloaded from: https://example.com/downloads/example-tool-2.1.0-x64.exe
+  Checksum type:   SHA256
+  Checksum:        e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+FILE 2: example-tool-2.1.0-x86.exe
+  Downloaded from: https://example.com/downloads/example-tool-2.1.0-x86.exe
+  Checksum type:   SHA256
+  Checksum:        e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+---

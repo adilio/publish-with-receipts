@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  example-package.nuspec
+
+  THIS FILE CONTAINS INTENTIONAL SECURITY/QUALITY ISSUES for demo purposes.
+  Each flaw is labelled with the pipeline check that should detect it.
+-->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>example-package</id>
+    <version>2.1.0</version>
+    <title>Example Package</title>
+    <authors>Example Author</authors>
+
+    <!-- INTENTIONAL FLAW: Missing projectUrl, iconUrl, and meaningful tags.
+         The choco-naming-validation action checks for completeness of metadata.
+         Incomplete metadata also makes the package harder to discover and evaluate. -->
+    <description>
+      An example Chocolatey package used to demonstrate supply chain security
+      scanning. Contains intentional anti-patterns in the install script.
+      DO NOT install in production environments.
+    </description>
+
+    <!-- INTENTIONAL FLAW: Dependency without version pinning.
+         Specifying only the minimum version (version="1.0") means the resolved
+         dependency version can change between builds. A pinned dependency would
+         use version="[3.2.1]" (exact) or version="[3.2.1,4.0)" (bounded range). -->
+    <dependencies>
+      <dependency id="chocolatey-core.extension" version="1.0" />
+      <dependency id="dotnet-runtime" version="6.0" />
+    </dependencies>
+
+    <!-- INTENTIONAL FLAW: Package name 'example-package' is generic and could
+         conflict with other packages. The naming validation action checks for
+         similarity to existing community repo packages.
+         A real package should use a specific, unique name. -->
+
+    <releaseNotes>Initial release.</releaseNotes>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <summary>Example package for supply chain security demos.</summary>
+    <!-- Missing: projectUrl, iconUrl, licenseUrl, tags, bugTrackerUrl -->
+  </metadata>
+</package>

@@ -1,0 +1,156 @@
+name: 'PSScriptAnalyzer'
+description: |
+  Runs PSScriptAnalyzer against PowerShell module source and uploads results
+  as SARIF to GitHub Code Scanning. Findings appear as PR annotations.
+
+inputs:
+  path:
+    description: 'Path to the PowerShell module or script directory to scan.'
+    required: true
+    default: '.'
+  severity-threshold:
+    description: |
+      Minimum severity level to include in SARIF output.
+      Valid values: Information, Warning, Error, ParseError.
+    required: false
+    default: 'Warning'
+  sarif-output:
+    description: 'Path to write the SARIF output file.'
+    required: false
+    default: 'psscriptanalyzer-results.sarif'
+  fail-on-findings:
+    description: |
+      Whether to fail the step if findings at or above the severity threshold
+      are found. Set to 'false' to surface findings without blocking the pipeline.
+    required: false
+    default: 'false'
+  custom-rules-path:
+    description: 'Path to a directory containing custom PSScriptAnalyzer rules (.psm1).'
+    required: false
+    default: ''
+
+outputs:
+  sarif-path:
+    description: 'Path to the generated SARIF file.'
+    value: ${{ steps.analyze.outputs.sarif-path }}
+  finding-count:
+    description: 'Number of findings at or above the severity threshold.'
+    value: ${{ steps.analyze.outputs.finding-count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install PSScriptAnalyzer
+      shell: pwsh
+      run: |
+        if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+          Write-Host "Installing PSScriptAnalyzer..."
+          Install-Module -Name PSScriptAnalyzer -Force -SkipPublisherCheck -Scope CurrentUser
+        } else {
+          Write-Host "PSScriptAnalyzer already installed: $(Get-Module -ListAvailable -Name PSScriptAnalyzer | Select-Object -First 1 -ExpandProperty Version)"
+        }
+
+    - name: Run PSScriptAnalyzer
+      id: analyze
+      shell: pwsh
+      run: |
+        $path              = '${{ inputs.path }}'
+        $severityThreshold = '${{ inputs.severity-threshold }}'
+        $sarifOutput       = '${{ inputs.sarif-output }}'
+        $customRulesPath   = '${{ inputs.custom-rules-path }}'
+
+        $severityMap = @{
+          'Information' = 0
+          'Warning'     = 1
+          'Error'       = 2
+          'ParseError'  = 3
+        }
+        $minSeverity = $severityMap[$severityThreshold]
+
+        $analyzeParams = @{
+          Path        = $path
+          Recurse     = $true
+          Severity    = @('Information', 'Warning', 'Error', 'ParseError')
+        }
+        if ($customRulesPath) {
+          $analyzeParams['CustomRulePath'] = $customRulesPath
+        }
+
+        Write-Host "Scanning: $path"
+        $results = Invoke-ScriptAnalyzer @analyzeParams
+
+        # Filter to requested severity
+        $filtered = $results | Where-Object {
+          $severityMap[$_.Severity.ToString()] -ge $minSeverity
+        }
+
+        Write-Host "Total findings: $($results.Count)"
+        Write-Host "Findings at or above '$severityThreshold': $($filtered.Count)"
+
+        # Build SARIF document
+        $runs = @(
+          @{
+            tool = @{
+              driver = @{
+                name            = 'PSScriptAnalyzer'
+                informationUri  = 'https://github.com/PowerShell/PSScriptAnalyzer'
+                rules           = @()
+              }
+            }
+            results = @(
+              $results | ForEach-Object {
+                $severity = switch ($_.Severity.ToString()) {
+                  'Error'       { 'error' }
+                  'Warning'     { 'warning' }
+                  'Information' { 'note' }
+                  default       { 'note' }
+                }
+                @{
+                  ruleId  = $_.RuleName
+                  level   = $severity
+                  message = @{ text = $_.Message }
+                  locations = @(
+                    @{
+                      physicalLocation = @{
+                        artifactLocation = @{ uri = $_.ScriptPath }
+                        region = @{
+                          startLine   = $_.Line
+                          startColumn = $_.Column
+                        }
+                      }
+                    }
+                  )
+                }
+              }
+            )
+          }
+        )
+
+        $sarif = @{
+          '$schema' = 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json'
+          version   = '2.1.0'
+          runs      = $runs
+        }
+
+        $sarif | ConvertTo-Json -Depth 20 | Out-File -FilePath $sarifOutput -Encoding utf8
+        Write-Host "SARIF written to: $sarifOutput"
+
+        "sarif-path=$sarifOutput"    >> $env:GITHUB_OUTPUT
+        "finding-count=$($filtered.Count)" >> $env:GITHUB_OUTPUT
+
+    - name: Upload SARIF to GitHub Code Scanning
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: ${{ inputs.sarif-output }}
+        category: 'PSScriptAnalyzer'
+
+    - name: Fail on findings (if configured)
+      if: inputs.fail-on-findings == 'true'
+      shell: pwsh
+      run: |
+        $count = [int]'${{ steps.analyze.outputs.finding-count }}'
+        if ($count -gt 0) {
+          Write-Error "PSScriptAnalyzer found $count finding(s) at or above '${{ inputs.severity-threshold }}' severity. Review the Code Scanning tab for details."
+          exit 1
+        }

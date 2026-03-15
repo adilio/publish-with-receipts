@@ -1,0 +1,107 @@
+name: 'Semgrep Scan'
+description: |
+  Runs Semgrep with custom rules against the target path. Supports both
+  the custom rules in this repository and any additional rule paths.
+  Uploads results as SARIF to GitHub Code Scanning.
+
+inputs:
+  path:
+    description: 'Path to scan.'
+    required: true
+    default: '.'
+  rules:
+    description: |
+      Semgrep rules to run. Can be a path to a local .yml file, a directory
+      of rules, or a Semgrep Registry identifier (e.g., p/default).
+      Separate multiple values with spaces.
+    required: false
+    default: 'semgrep-rules/'
+  sarif-output:
+    description: 'Path to write the SARIF output file.'
+    required: false
+    default: 'semgrep-results.sarif'
+  fail-on-findings:
+    description: 'Whether to fail the step if any findings are detected.'
+    required: false
+    default: 'false'
+  severity:
+    description: |
+      Minimum severity to report. Valid values: INFO, WARNING, ERROR.
+    required: false
+    default: 'WARNING'
+
+outputs:
+  sarif-path:
+    description: 'Path to the generated SARIF file.'
+    value: ${{ inputs.sarif-output }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Semgrep
+      shell: bash
+      run: |
+        if ! command -v semgrep &> /dev/null; then
+          echo "Installing Semgrep..."
+          pip install semgrep --quiet
+        else
+          echo "Semgrep already installed: $(semgrep --version)"
+        fi
+
+    - name: Run Semgrep
+      id: scan
+      shell: bash
+      run: |
+        echo "Running Semgrep scan..."
+        echo "  Path:  ${{ inputs.path }}"
+        echo "  Rules: ${{ inputs.rules }}"
+
+        # Build the semgrep command
+        RULE_ARGS=""
+        for rule in ${{ inputs.rules }}; do
+          RULE_ARGS="$RULE_ARGS --config $rule"
+        done
+
+        semgrep \
+          $RULE_ARGS \
+          --sarif \
+          --output "${{ inputs.sarif-output }}" \
+          --severity "${{ inputs.severity }}" \
+          --no-git-ignore \
+          "${{ inputs.path }}" || SEMGREP_EXIT=$?
+
+        # Semgrep exits with 1 when findings are present; that's expected behaviour.
+        # We handle fail-on-findings separately below.
+        echo "Semgrep completed. Exit code: ${SEMGREP_EXIT:-0}"
+
+        if [ -f "${{ inputs.sarif-output }}" ]; then
+          FINDING_COUNT=$(python3 -c "
+        import json, sys
+        with open('${{ inputs.sarif-output }}') as f:
+            sarif = json.load(f)
+        count = sum(len(r.get('results', [])) for r in sarif.get('runs', []))
+        print(count)
+        " 2>/dev/null || echo "0")
+          echo "Findings: $FINDING_COUNT"
+          echo "finding-count=$FINDING_COUNT" >> "$GITHUB_OUTPUT"
+        else
+          echo "No SARIF output produced."
+          echo "finding-count=0" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Upload SARIF to GitHub Code Scanning
+      uses: github/codeql-action/upload-sarif@v3
+      if: always() && hashFiles(inputs.sarif-output) != ''
+      with:
+        sarif_file: ${{ inputs.sarif-output }}
+        category: 'Semgrep'
+
+    - name: Fail on findings (if configured)
+      if: inputs.fail-on-findings == 'true'
+      shell: bash
+      run: |
+        COUNT="${{ steps.scan.outputs.finding-count }}"
+        if [ "${COUNT:-0}" -gt 0 ]; then
+          echo "::error::Semgrep found ${COUNT} finding(s). Review the Code Scanning tab for details."
+          exit 1
+        fi
