@@ -1,0 +1,177 @@
+name: 'Provenance Generate'
+description: |
+  Generates a SLSA-style provenance attestation for a build artifact.
+  Records: source repo, commit SHA, workflow reference, build timestamp,
+  runner environment, and hashes of the output artifact(s).
+  Uploads the provenance document as a GitHub Actions artifact.
+
+  For stronger attestations (signed, verifiable with slsa-verifier),
+  use the slsa-framework/slsa-github-generator instead of this action.
+  This action is designed as a lightweight, dependency-free alternative
+  for teams that want provenance without the complexity of SLSA level 2+.
+
+inputs:
+  artifact-path:
+    description: 'Path to the artifact file to generate provenance for.'
+    required: true
+  artifact-name:
+    description: 'Human-readable name for the artifact (e.g., ExampleModule 1.2.0).'
+    required: true
+  sbom-path:
+    description: 'Path to the SBOM file to include a reference to in the provenance.'
+    required: false
+    default: ''
+  provenance-output:
+    description: 'Path to write the provenance JSON document.'
+    required: false
+    default: 'provenance.json'
+  upload-artifact:
+    description: 'Whether to upload the provenance document as a GitHub Actions artifact.'
+    required: false
+    default: 'true'
+  artifact-upload-name:
+    description: 'Name for the uploaded GitHub Actions artifact.'
+    required: false
+    default: 'provenance'
+
+outputs:
+  provenance-path:
+    description: 'Path to the generated provenance document.'
+    value: ${{ inputs.provenance-output }}
+  artifact-sha256:
+    description: 'SHA256 hash of the artifact.'
+    value: ${{ steps.generate.outputs.artifact-sha256 }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Generate provenance document
+      id: generate
+      shell: bash
+      run: |
+        ARTIFACT_PATH="${{ inputs.artifact-path }}"
+        ARTIFACT_NAME="${{ inputs.artifact-name }}"
+        PROVENANCE_OUTPUT="${{ inputs.provenance-output }}"
+        SBOM_PATH="${{ inputs.sbom-path }}"
+
+        if [ ! -e "$ARTIFACT_PATH" ]; then
+          echo "::error::Artifact not found: $ARTIFACT_PATH"
+          exit 1
+        fi
+
+        # Compute artifact hash(es)
+        if [ -f "$ARTIFACT_PATH" ]; then
+          SHA256=$(sha256sum "$ARTIFACT_PATH" | awk '{print $1}')
+          ARTIFACT_SIZE=$(stat -c%s "$ARTIFACT_PATH")
+        elif [ -d "$ARTIFACT_PATH" ]; then
+          # For directories, hash a tar archive of the contents
+          SHA256=$(tar -c "$ARTIFACT_PATH" | sha256sum | awk '{print $1}')
+          ARTIFACT_SIZE=$(du -sb "$ARTIFACT_PATH" | awk '{print $1}')
+        fi
+
+        echo "Artifact SHA256: $SHA256"
+        echo "artifact-sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+        # Compute SBOM hash if provided
+        SBOM_DIGEST=""
+        if [ -n "$SBOM_PATH" ] && [ -f "$SBOM_PATH" ]; then
+          SBOM_DIGEST=$(sha256sum "$SBOM_PATH" | awk '{print $1}')
+        fi
+
+        # Build the provenance document
+        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        RUNNER_OS="${{ runner.os }}"
+        RUNNER_ARCH="${{ runner.arch }}"
+
+        python3 - <<PYEOF
+        import json, os
+
+        provenance = {
+          "_type": "https://in-toto.io/Statement/v0.1",
+          "subject": [
+            {
+              "name": "${ARTIFACT_NAME}",
+              "digest": {
+                "sha256": "${SHA256}"
+              }
+            }
+          ],
+          "predicateType": "https://slsa.dev/provenance/v0.2",
+          "predicate": {
+            "builder": {
+              "id": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            },
+            "buildType": "https://github.com/actions/workflow@v1",
+            "invocation": {
+              "configSource": {
+                "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
+                "digest": {
+                  "sha1": "${{ github.sha }}"
+                },
+                "entryPoint": "${{ github.workflow }}"
+              },
+              "parameters": {
+                "event": "${{ github.event_name }}",
+                "ref": "${{ github.ref }}",
+                "workflow": "${{ github.workflow }}"
+              },
+              "environment": {
+                "github_run_id": "${{ github.run_id }}",
+                "github_run_number": "${{ github.run_number }}",
+                "github_run_attempt": "${{ github.run_attempt }}",
+                "runner_os": "${RUNNER_OS}",
+                "runner_arch": "${RUNNER_ARCH}"
+              }
+            },
+            "buildConfig": {},
+            "metadata": {
+              "buildInvocationId": "${{ github.run_id }}-${{ github.run_attempt }}",
+              "buildStartedOn": "${TIMESTAMP}",
+              "completeness": {
+                "parameters": True,
+                "environment": True,
+                "materials": False
+              },
+              "reproducible": False
+            },
+            "materials": [
+              {
+                "uri": "git+https://github.com/${{ github.repository }}",
+                "digest": {
+                  "sha1": "${{ github.sha }}"
+                }
+              }
+            ]
+          },
+          "attestation_metadata": {
+            "generated_by": "publish-with-receipts/provenance-generate",
+            "generated_at": "${TIMESTAMP}",
+            "artifact_path": "${ARTIFACT_PATH}",
+            "artifact_size_bytes": "${ARTIFACT_SIZE}",
+            "sbom_digest": "${SBOM_DIGEST}" if "${SBOM_DIGEST}" else None
+          }
+        }
+
+        # Remove None values
+        def remove_none(d):
+            if isinstance(d, dict):
+                return {k: remove_none(v) for k, v in d.items() if v is not None}
+            if isinstance(d, list):
+                return [remove_none(i) for i in d]
+            return d
+
+        provenance = remove_none(provenance)
+
+        with open("${PROVENANCE_OUTPUT}", "w") as f:
+            json.dump(provenance, f, indent=2)
+
+        print(f"Provenance written to: ${PROVENANCE_OUTPUT}")
+        PYEOF
+
+    - name: Upload provenance artifact
+      if: inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-upload-name }}
+        path: ${{ inputs.provenance-output }}
+        retention-days: 365

@@ -1,0 +1,168 @@
+name: Chocolatey Supply Chain Security
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'examples/chocolatey-package/**'
+      - '.github/workflows/chocolatey-supply-chain.yml'
+      - 'actions/**'
+      - 'semgrep-rules/**'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'examples/chocolatey-package/**'
+      - '.github/workflows/chocolatey-supply-chain.yml'
+      - 'actions/**'
+      - 'semgrep-rules/**'
+  workflow_dispatch:
+
+# Required for SARIF upload and provenance attestations.
+permissions:
+  contents: read
+  security-events: write
+  id-token: write
+  actions: read
+
+jobs:
+  supply-chain:
+    name: Supply Chain Security — Chocolatey Package
+    # Chocolatey-specific steps require Windows; PowerShell Core runs on ubuntu-latest
+    # but some Chocolatey helpers assume a Windows environment.
+    runs-on: windows-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -----------------------------------------------------------------------
+      # 2. Package Naming Validation
+      #
+      # Checks the package name in the .nuspec against the Chocolatey community
+      # repository for potential typosquatting conflicts. Uses Levenshtein distance
+      # to flag similar names. Also validates metadata completeness.
+      #
+      # This is the pipeline-level defence against the typosquatting vector.
+      # -----------------------------------------------------------------------
+      - name: Package naming validation
+        uses: ./actions/choco-naming-validation
+        with:
+          nuspec-path: examples/chocolatey-package/example-package.nuspec
+          similarity-threshold: '2'
+          fail-on-conflict: 'false'
+          check-metadata-completeness: 'true'
+
+      # -----------------------------------------------------------------------
+      # 3. Checksum and Integrity Verification
+      #
+      # Validates that:
+      #   - Every external URL in the install script has a checksum
+      #   - Checksums use SHA256 (not MD5/SHA1)
+      #   - Embedded binaries in tools/ are listed in VERIFICATION.txt
+      #   - VERIFICATION.txt contains actual hash values
+      #
+      # fail-on-missing-checksum is 'true' by default — missing checksums
+      # for external downloads are a hard failure.
+      # -----------------------------------------------------------------------
+      - name: Checksum and integrity verification
+        uses: ./actions/choco-integrity-check
+        with:
+          tools-path: examples/chocolatey-package/tools
+          fail-on-missing-checksum: 'false'  # Set to 'true' to enforce
+          fail-on-weak-algorithm: 'true'
+          verify-checksums-live: 'false'
+
+      # -----------------------------------------------------------------------
+      # 4. Semgrep — Chocolatey-specific rules
+      #
+      # Custom rules in semgrep-rules/chocolatey-install-patterns.yml detect:
+      #   - Direct Invoke-WebRequest bypassing Chocolatey's checksum helpers
+      #   - Install-ChocolateyPackage without a checksum argument
+      #   - Execution of downloaded content without verification
+      #   - Undocumented PATH/registry modifications
+      #   - Hardcoded internal URLs or credentials
+      #   - Weak checksum algorithms
+      #
+      # Also runs the PowerShell generic rules to catch patterns like
+      # hardcoded secrets and download-execute chains.
+      # -----------------------------------------------------------------------
+      - name: Semgrep — Chocolatey install script rules
+        uses: ./actions/semgrep-scan
+        with:
+          path: examples/chocolatey-package
+          rules: semgrep-rules/chocolatey-install-patterns.yml semgrep-rules/powershell-unsafe-patterns.yml
+          sarif-output: semgrep-chocolatey-results.sarif
+          fail-on-findings: 'false'
+          severity: WARNING
+
+      # -----------------------------------------------------------------------
+      # 5. SBOM Generation — Syft
+      #
+      # Generates a CycloneDX SBOM for the full Chocolatey package, including
+      # the tools/ directory. For packages that embed binaries, Syft records
+      # file hashes even if it can't identify the component by name.
+      # -----------------------------------------------------------------------
+      - name: Generate SBOM
+        uses: ./actions/sbom-generate
+        with:
+          path: examples/chocolatey-package
+          output-file: chocolatey-package-sbom.cdx.json
+          artifact-name: chocolatey-package-sbom
+          upload-artifact: 'true'
+
+      # -----------------------------------------------------------------------
+      # 6. Vulnerability Scan — Grype
+      # -----------------------------------------------------------------------
+      - name: Vulnerability scan
+        uses: ./actions/vulnerability-scan
+        with:
+          sbom-path: chocolatey-package-sbom.cdx.json
+          sarif-output: grype-chocolatey-results.sarif
+          json-output: grype-chocolatey-results.json
+          fail-on-severity: ''
+          upload-artifact: 'true'
+          artifact-name: chocolatey-vulnerability-scan
+
+      # -----------------------------------------------------------------------
+      # 7. Provenance Generation
+      #
+      # For a Chocolatey package, provenance is especially important because
+      # the package is often a thin wrapper around an external binary. The
+      # provenance document ties together: which binary was in scope, what the
+      # SBOM contained, what was scanned, and which commit/pipeline produced it.
+      # -----------------------------------------------------------------------
+      - name: Generate provenance
+        uses: ./actions/provenance-generate
+        with:
+          artifact-path: examples/chocolatey-package
+          artifact-name: example-package 2.1.0 (${{ github.sha }})
+          sbom-path: chocolatey-package-sbom.cdx.json
+          provenance-output: chocolatey-package-provenance.json
+          upload-artifact: 'true'
+          artifact-upload-name: chocolatey-package-provenance
+
+      # -----------------------------------------------------------------------
+      # 8. Summary
+      # -----------------------------------------------------------------------
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Chocolatey Supply Chain Security Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Step | Output |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Naming Validation | Logged to step output |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Integrity Check | Logged to step output |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Semgrep | \`semgrep-chocolatey-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SBOM (Syft) | \`chocolatey-package-sbom.cdx.json\` → Artifacts |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Vulnerability Scan (Grype) | \`grype-chocolatey-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Provenance | \`chocolatey-package-provenance.json\` → Artifacts |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> **Note:** The example package contains intentional security issues for" >> "$GITHUB_STEP_SUMMARY"
+          echo "> demonstration purposes. Findings are expected." >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,151 @@
+name: 'Chocolatey Naming Validation'
+description: |
+  Validates a Chocolatey package name against the community repository for
+  potential typosquatting conflicts. Uses the Chocolatey OData API to check
+  for similar package names using Levenshtein distance comparison. Also
+  validates package metadata completeness.
+
+inputs:
+  nuspec-path:
+    description: 'Path to the .nuspec file to validate.'
+    required: true
+  similarity-threshold:
+    description: |
+      Maximum Levenshtein distance to consider a name "similar".
+      Lower values are more strict. Default is 2 (catches common typos).
+    required: false
+    default: '2'
+  fail-on-conflict:
+    description: |
+      Whether to fail if a similar name is found in the community repo.
+    required: false
+    default: 'false'
+  check-metadata-completeness:
+    description: 'Whether to check for recommended metadata fields.'
+    required: false
+    default: 'true'
+
+outputs:
+  package-id:
+    description: 'The package ID extracted from the nuspec.'
+    value: ${{ steps.validate.outputs.package-id }}
+  similar-packages:
+    description: 'Comma-separated list of similar package names found.'
+    value: ${{ steps.validate.outputs.similar-packages }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate package naming and metadata
+      id: validate
+      shell: pwsh
+      run: |
+        $nuspecPath = '${{ inputs.nuspec-path }}'
+        $threshold  = [int]'${{ inputs.similarity-threshold }}'
+        $checkMeta  = '${{ inputs.check-metadata-completeness }}' -eq 'true'
+
+        # --- Parse the nuspec ---
+        if (-not (Test-Path $nuspecPath)) {
+          Write-Error "nuspec not found: $nuspecPath"
+          exit 1
+        }
+
+        [xml]$nuspec   = Get-Content $nuspecPath -Raw
+        $packageId     = $nuspec.package.metadata.id
+        $packageVersion = $nuspec.package.metadata.version
+
+        Write-Host "Package ID: $packageId"
+        Write-Host "Version:    $packageVersion"
+
+        "package-id=$packageId" >> $env:GITHUB_OUTPUT
+
+        # --- Levenshtein distance function ---
+        function Get-LevenshteinDistance {
+          param([string]$Source, [string]$Target)
+          $s = $Source.ToLower()
+          $t = $Target.ToLower()
+          $n = $s.Length
+          $m = $t.Length
+          if ($n -eq 0) { return $m }
+          if ($m -eq 0) { return $n }
+
+          $d = [int[,]]::new($n + 1, $m + 1)
+          for ($i = 0; $i -le $n; $i++) { $d[$i, 0] = $i }
+          for ($j = 0; $j -le $m; $j++) { $d[0, $j] = $j }
+
+          for ($i = 1; $i -le $n; $i++) {
+            for ($j = 1; $j -le $m; $j++) {
+              $cost = if ($s[$i - 1] -eq $t[$j - 1]) { 0 } else { 1 }
+              $d[$i, $j] = [Math]::Min(
+                [Math]::Min($d[$i - 1, $j] + 1, $d[$i, $j - 1] + 1),
+                $d[$i - 1, $j - 1] + $cost
+              )
+            }
+          }
+          return $d[$n, $m]
+        }
+
+        # --- Query Chocolatey community repo ---
+        Write-Host "Querying Chocolatey community repository..."
+        $searchTerm = ($packageId -replace '[-_\.]', '').Substring(0, [Math]::Min($packageId.Length, 5))
+        $apiUrl = "https://community.chocolatey.org/api/v2/Packages()?`$filter=substringof('$searchTerm',tolower(Id))&`$select=Id&`$top=100"
+
+        try {
+          $response = Invoke-RestMethod -Uri $apiUrl -TimeoutSec 30 -UseBasicParsing
+          $existingPackages = $response.feed.entry | ForEach-Object { $_.title.'#text' }
+          Write-Host "Found $($existingPackages.Count) candidate packages to compare against."
+        } catch {
+          Write-Warning "Could not reach Chocolatey community API: $_"
+          Write-Warning "Skipping similarity check (non-blocking)."
+          $existingPackages = @()
+        }
+
+        # --- Check for similar names ---
+        $similarPackages = @()
+        foreach ($existing in $existingPackages) {
+          if ($existing -ieq $packageId) {
+            Write-Warning "Exact name match found in community repo: $existing"
+            $similarPackages += $existing
+          } else {
+            $distance = Get-LevenshteinDistance -Source $packageId -Target $existing
+            if ($distance -le $threshold -and $distance -gt 0) {
+              Write-Warning "Similar package name found (distance=$distance): $existing"
+              $similarPackages += $existing
+            }
+          }
+        }
+
+        $similarList = $similarPackages -join ','
+        "similar-packages=$similarList" >> $env:GITHUB_OUTPUT
+
+        if ($similarPackages.Count -gt 0) {
+          Write-Host "::warning::Package name '$packageId' is similar to existing community repo package(s): $similarList. Review for potential typosquatting conflicts."
+        } else {
+          Write-Host "No similar package names found in community repo."
+        }
+
+        # --- Metadata completeness check ---
+        if ($checkMeta) {
+          Write-Host "Checking metadata completeness..."
+          $meta = $nuspec.package.metadata
+          $recommended = @('projectUrl', 'iconUrl', 'licenseUrl', 'tags', 'releaseNotes')
+          $missing = @()
+
+          foreach ($field in $recommended) {
+            if (-not $meta.$field -or [string]::IsNullOrWhiteSpace($meta.$field)) {
+              $missing += $field
+            }
+          }
+
+          if ($missing.Count -gt 0) {
+            Write-Host "::warning::Recommended metadata fields are missing: $($missing -join ', '). These improve discoverability and consumer trust."
+          } else {
+            Write-Host "All recommended metadata fields are present."
+          }
+        }
+
+        # --- Fail on conflict ---
+        if ('${{ inputs.fail-on-conflict }}' -eq 'true' -and $similarPackages.Count -gt 0) {
+          Write-Error "Package name '$packageId' conflicts with existing community repo package(s): $similarList"
+          exit 1
+        }
