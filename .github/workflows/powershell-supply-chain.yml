@@ -101,7 +101,28 @@ jobs:
           severity: WARNING
 
       # -----------------------------------------------------------------------
-      # 5. SBOM Generation — Syft
+      # 5. Dependency Pin Check
+      #
+      # Scans .psd1 module manifests for floating or unpinned RequiredModules
+      # entries. A ModuleVersion-only constraint is a minimum, not an exact
+      # pin — meaning a future build can silently pull a different version.
+      #
+      # This step fills the gap noted in the threat model: the SBOM captures
+      # resolved versions after the fact, but pinning enforcement prevents the
+      # floating dependency from being introduced in the first place.
+      #
+      # fail-on-unpinned is 'false' by default. Enable when you are ready
+      # to enforce pinning across your module manifests.
+      # -----------------------------------------------------------------------
+      - name: Dependency pin check
+        uses: ./actions/dependency-pin-check
+        with:
+          psd1-path: examples/powershell-module
+          nuspec-path: ''
+          fail-on-unpinned: 'false'
+
+      # -----------------------------------------------------------------------
+      # 6. SBOM Generation — Syft
       #
       # Generates a CycloneDX JSON SBOM that captures all module files and
       # declared dependencies at build time. The SBOM is the answer to
@@ -116,7 +137,7 @@ jobs:
           upload-artifact: 'true'
 
       # -----------------------------------------------------------------------
-      # 6. Vulnerability Scan — Grype
+      # 7. Vulnerability Scan — Grype
       #
       # Scans the SBOM against known vulnerability databases (NVD, GitHub
       # Advisory Database, etc.). Results are uploaded as SARIF and JSON.
@@ -135,7 +156,7 @@ jobs:
           artifact-name: powershell-vulnerability-scan
 
       # -----------------------------------------------------------------------
-      # 7. Provenance Generation
+      # 8. Provenance Generation
       #
       # Generates a SLSA-style provenance document that records:
       #   - Source repo and commit SHA
@@ -160,7 +181,7 @@ jobs:
           artifact-upload-name: powershell-module-provenance
 
       # -----------------------------------------------------------------------
-      # 8. Summary
+      # 9. Summary
       # -----------------------------------------------------------------------
       - name: Write job summary
         if: always()
@@ -173,6 +194,7 @@ jobs:
           echo "| Pester Tests | Logged to step output |" >> "$GITHUB_STEP_SUMMARY"
           echo "| PSScriptAnalyzer | \`psscriptanalyzer-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Semgrep | \`semgrep-powershell-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Dependency Pin Check | Logged to step output |" >> "$GITHUB_STEP_SUMMARY"
           echo "| SBOM (Syft) | \`powershell-module-sbom.cdx.json\` → Artifacts |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Vulnerability Scan (Grype) | \`grype-powershell-results.sarif\` → Code Scanning |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Provenance | \`powershell-module-provenance.json\` → Artifacts |" >> "$GITHUB_STEP_SUMMARY"

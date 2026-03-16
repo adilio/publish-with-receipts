@@ -1,0 +1,280 @@
+name: 'Dependency Pin Check'
+description: |
+  Checks that all dependencies declared in PowerShell module manifests (.psd1)
+  and Chocolatey package specs (.nuspec) use exact or bounded version pins
+  rather than minimum-version or unpinned references.
+
+  Addresses the floating dependency threat vector: a minimum-version constraint
+  means the resolved dependency can change between builds without any code change
+  on your side — creating an invisible attack surface for dependency confusion.
+
+  This action does NOT install or resolve dependencies — it performs static
+  analysis of the manifest/nuspec files only.
+
+inputs:
+  psd1-path:
+    description: 'Path to search for .psd1 module manifests (recursive). Set to empty to skip.'
+    required: false
+    default: '.'
+  nuspec-path:
+    description: 'Path to search for .nuspec package specs (recursive). Set to empty to skip.'
+    required: false
+    default: '.'
+  fail-on-unpinned:
+    description: 'Fail the step if unpinned dependencies are found. Set to false to surface findings without blocking.'
+    required: false
+    default: 'false'
+  severity-threshold:
+    description: 'Minimum severity level to report: low, medium, high. Unpinned = medium, no version = high.'
+    required: false
+    default: 'low'
+
+outputs:
+  unpinned-count:
+    description: 'Total number of unpinned dependency references found.'
+    value: ${{ steps.check.outputs.unpinned-count }}
+  findings-summary:
+    description: 'Human-readable summary of findings.'
+    value: ${{ steps.check.outputs.findings-summary }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check dependency pinning
+      id: check
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Continue'
+        $findings = [System.Collections.Generic.List[hashtable]]::new()
+        $psd1Path = '${{ inputs.psd1-path }}'
+        $nuspecPath = '${{ inputs.nuspec-path }}'
+        $failOnUnpinned = '${{ inputs.fail-on-unpinned }}' -eq 'true'
+
+        # -----------------------------------------------------------------------
+        # Helper: parse a version string and classify its pinning level
+        #   exact   = '1.2.3'        (good)
+        #   bounded = '[1.0, 2.0)'   (acceptable)
+        #   minimum = '1.0'          (floating — ModuleVersion semantics)
+        #   none    = ''             (unpinned)
+        # -----------------------------------------------------------------------
+        function Get-PinLevel {
+          param([string]$Version)
+          if ([string]::IsNullOrWhiteSpace($Version)) { return 'none' }
+          # NuGet/nuspec range notation
+          if ($Version -match '^\[' -or $Version -match '^\(') { return 'bounded' }
+          # Exact three-part semver
+          if ($Version -match '^\d+\.\d+\.\d+(\.\d+)?$') { return 'exact' }
+          # Anything else (e.g. '1.0', '2') is treated as minimum
+          return 'minimum'
+        }
+
+        # -----------------------------------------------------------------------
+        # Analyse .psd1 module manifests
+        # -----------------------------------------------------------------------
+        if ($psd1Path -ne '') {
+          $manifests = Get-ChildItem -Path $psd1Path -Recurse -Filter '*.psd1' -ErrorAction SilentlyContinue
+
+          foreach ($manifest in $manifests) {
+            Write-Host "Checking manifest: $($manifest.FullName)"
+            try {
+              $data = Import-PowerShellDataFile -Path $manifest.FullName -ErrorAction Stop
+            } catch {
+              Write-Warning "Could not parse $($manifest.Name): $_"
+              continue
+            }
+
+            $requiredModules = $data.RequiredModules
+            if (-not $requiredModules) { continue }
+
+            foreach ($req in $requiredModules) {
+              if ($req -is [string]) {
+                # RequiredModules = @('ModuleName') — no version at all
+                $findings.Add(@{
+                  File     = $manifest.FullName
+                  Type     = 'psd1'
+                  Dep      = $req
+                  Declared = '(none)'
+                  PinLevel = 'none'
+                  Severity = 'high'
+                  Message  = "RequiredModules entry '$req' has no version constraint. Any version will be resolved."
+                })
+              } elseif ($req -is [hashtable]) {
+                $modName    = $req.ModuleName
+                $modVersion = $req.ModuleVersion   # minimum version
+                $reqVersion = $req.RequiredVersion  # exact version (preferred)
+                $maxVersion = $req.MaximumVersion
+
+                if ($reqVersion) {
+                  $level = Get-PinLevel $reqVersion
+                  if ($level -eq 'minimum') {
+                    $findings.Add(@{
+                      File     = $manifest.FullName
+                      Type     = 'psd1'
+                      Dep      = $modName
+                      Declared = "RequiredVersion = '$reqVersion'"
+                      PinLevel = 'minimum'
+                      Severity = 'medium'
+                      Message  = "Module '$modName' RequiredVersion '$reqVersion' does not look like an exact version pin (e.g. '1.2.3')."
+                    })
+                  }
+                } elseif ($modVersion -and -not $maxVersion) {
+                  # ModuleVersion alone = minimum, no upper bound
+                  $findings.Add(@{
+                    File     = $manifest.FullName
+                    Type     = 'psd1'
+                    Dep      = $modName
+                    Declared = "ModuleVersion = '$modVersion'"
+                    PinLevel = 'minimum'
+                    Severity = 'medium'
+                    Message  = "Module '$modName' uses ModuleVersion (minimum) without MaximumVersion or RequiredVersion. Dependency is floating."
+                  })
+                } elseif (-not $modVersion -and -not $reqVersion) {
+                  $findings.Add(@{
+                    File     = $manifest.FullName
+                    Type     = 'psd1'
+                    Dep      = $modName
+                    Declared = '(none)'
+                    PinLevel = 'none'
+                    Severity = 'high'
+                    Message  = "Module '$modName' has no version constraint. Any version will be resolved."
+                  })
+                }
+                # modVersion + maxVersion = bounded range (acceptable, no finding)
+              }
+            }
+          }
+        }
+
+        # -----------------------------------------------------------------------
+        # Analyse .nuspec package specs
+        # -----------------------------------------------------------------------
+        if ($nuspecPath -ne '') {
+          $nuspecs = Get-ChildItem -Path $nuspecPath -Recurse -Filter '*.nuspec' -ErrorAction SilentlyContinue
+
+          foreach ($nuspec in $nuspecs) {
+            Write-Host "Checking nuspec: $($nuspec.FullName)"
+            try {
+              [xml]$xml = Get-Content -Path $nuspec.FullName -ErrorAction Stop
+            } catch {
+              Write-Warning "Could not parse $($nuspec.Name): $_"
+              continue
+            }
+
+            $ns = @{ nuget = 'http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd' }
+            $deps = $xml.SelectNodes('//dependency') + $xml.SelectNodes('//nuget:dependency', $ns)
+
+            foreach ($dep in $deps) {
+              if (-not $dep) { continue }
+              $id      = $dep.id
+              $version = $dep.version
+
+              if ([string]::IsNullOrWhiteSpace($version)) {
+                $findings.Add(@{
+                  File     = $nuspec.FullName
+                  Type     = 'nuspec'
+                  Dep      = $id
+                  Declared = '(none)'
+                  PinLevel = 'none'
+                  Severity = 'high'
+                  Message  = "NuGet dependency '$id' has no version attribute. Any version will resolve."
+                })
+              } else {
+                $level = Get-PinLevel $version
+                if ($level -eq 'minimum') {
+                  $findings.Add(@{
+                    File     = $nuspec.FullName
+                    Type     = 'nuspec'
+                    Dep      = $id
+                    Declared = "version='$version'"
+                    PinLevel = 'minimum'
+                    Severity = 'medium'
+                    Message  = "NuGet dependency '$id' version '$version' is a minimum-version constraint. Use '[x.y.z]' for exact pin or '[x.y, z.0)' for bounded range."
+                  })
+                }
+                # bounded or exact = acceptable
+              }
+            }
+          }
+        }
+
+        # -----------------------------------------------------------------------
+        # Output
+        # -----------------------------------------------------------------------
+        $count = $findings.Count
+        echo "unpinned-count=$count" >> $env:GITHUB_OUTPUT
+
+        if ($count -eq 0) {
+          Write-Host "✓ No unpinned dependencies found."
+          $summary = "No unpinned dependencies found."
+          echo "findings-summary=$summary" >> $env:GITHUB_OUTPUT
+
+          $summaryLines = @(
+            "## Dependency Pin Check",
+            "",
+            "✅ **All dependency constraints are pinned or bounded.**",
+            ""
+          )
+          $summaryLines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          exit 0
+        }
+
+        Write-Host ""
+        Write-Host "Dependency pinning issues found: $count"
+        Write-Host ""
+
+        $table = @(
+          "## Dependency Pin Check",
+          "",
+          "⚠️ **$count unpinned or floating dependency reference(s) found.**",
+          "",
+          "| Severity | File | Dependency | Constraint | Issue |",
+          "|----------|------|-----------|-----------|-------|"
+        )
+
+        foreach ($f in $findings) {
+          $relFile = $f.File -replace [regex]::Escape($PWD.Path + '/'), ''
+          $sev = $f.Severity.ToUpper()
+          $table += "| $sev | ``$relFile`` | ``$($f.Dep)`` | ``$($f.Declared)`` | $($f.Message) |"
+          Write-Host "[$sev] $($f.File)"
+          Write-Host "  Dep: $($f.Dep)"
+          Write-Host "  Constraint: $($f.Declared)"
+          Write-Host "  $($f.Message)"
+          Write-Host ""
+        }
+
+        $table += @(
+          "",
+          "### Remediation",
+          "",
+          "**psd1 — exact pin:**",
+          "```powershell",
+          "RequiredModules = @(",
+          "    @{ ModuleName = 'Az.Accounts'; RequiredVersion = '2.13.2' }",
+          ")",
+          "```",
+          "",
+          "**nuspec — exact pin:**",
+          "```xml",
+          "<dependency id=""chocolatey"" version=""[1.3.0]"" />",
+          "```",
+          "",
+          "**nuspec — bounded range (allows patch updates):**",
+          "```xml",
+          "<dependency id=""chocolatey"" version=""[1.3.0, 1.4.0)"" />",
+          "```",
+          "",
+          "See [docs/remediation-guide.md](../../docs/remediation-guide.md) for more detail."
+        )
+
+        $table | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+        $summary = "$count unpinned dependency reference(s) found across $($findings | Select-Object -ExpandProperty File -Unique | Measure-Object).Count file(s)."
+        echo "findings-summary=$summary" >> $env:GITHUB_OUTPUT
+
+        if ($failOnUnpinned) {
+          Write-Error "Failing step: $count unpinned dependency reference(s) found. Set fail-on-unpinned: 'false' to surface findings without blocking."
+          exit 1
+        } else {
+          Write-Host "Findings surfaced. Set fail-on-unpinned: 'true' to block on these issues."
+          exit 0
+        }

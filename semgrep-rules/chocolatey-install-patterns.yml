@@ -189,3 +189,102 @@ rules:
       category: security
       cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
       confidence: HIGH
+
+  # ---------------------------------------------------------------------------
+  # RULE: Get-ChocolateyWebFile without checksum
+  # Get-ChocolateyWebFile is the lower-level download helper. Like
+  # Install-ChocolateyPackage, it should always be called with a checksum.
+  # ---------------------------------------------------------------------------
+  - id: choco-get-web-file-no-checksum
+    patterns:
+      - pattern: |
+          Get-ChocolateyWebFile -PackageName $... -FileFullPath $... -Url $...
+      - pattern: |
+          Get-ChocolateyWebFile '$...' $... $...
+    pattern-not:
+      - pattern: |
+          Get-ChocolateyWebFile -PackageName $... -FileFullPath $... -Url $... -Checksum $...
+    message: |
+      Get-ChocolateyWebFile is called without a -Checksum argument. Omitting the
+      checksum means the downloaded file is not integrity-verified. Add -Checksum
+      with a SHA256 value and -ChecksumType 'sha256' to verify the binary.
+    severity: ERROR
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-354: Improper Validation of Integrity Check Value"
+      confidence: MEDIUM
+
+  # ---------------------------------------------------------------------------
+  # RULE: Scheduled task creation without documentation
+  # Scheduled tasks created during install run code with the rights of the
+  # scheduled user — often SYSTEM. They must be removed during uninstall.
+  # ---------------------------------------------------------------------------
+  - id: choco-scheduled-task-undocumented
+    patterns:
+      - pattern: |
+          New-ScheduledTask ...
+      - pattern: |
+          Register-ScheduledTask ...
+      - pattern: |
+          schtasks.exe /Create ...
+      - pattern: |
+          schtasks /Create ...
+    message: |
+      A scheduled task is being created. Scheduled tasks run with elevated
+      privileges (often SYSTEM) and persist after package uninstall unless
+      explicitly removed. Ensure the corresponding chocolateyUninstall.ps1
+      calls Uninstall-ChocolateyPath or removes the task via
+      Unregister-ScheduledTask / schtasks /Delete.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: security
+      confidence: HIGH
+
+  # ---------------------------------------------------------------------------
+  # RULE: Windows service installation without uninstall cleanup
+  # Services installed during Chocolatey package install must be removed during
+  # uninstall. Lingering services expand the attack surface of the host.
+  # ---------------------------------------------------------------------------
+  - id: choco-service-install-no-cleanup
+    patterns:
+      - pattern: |
+          New-Service -Name $... ...
+      - pattern: |
+          Install-ChocolateyService ...
+      - pattern: |
+          sc.exe create ...
+    message: |
+      A Windows service is being created. Ensure the corresponding
+      chocolateyUninstall.ps1 stops and removes the service (Stop-Service,
+      Remove-Service, or sc.exe delete). Services left behind after uninstall
+      expand the attack surface and may run under elevated accounts.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: security
+      confidence: MEDIUM
+
+  # ---------------------------------------------------------------------------
+  # RULE: Unpinned NuGet dependency in .nuspec
+  # A dependency with no version attribute or a minimum-only version means
+  # any version (including a newly-published malicious one) can be installed.
+  # ---------------------------------------------------------------------------
+  - id: nuspec-unpinned-dependency
+    patterns:
+      - pattern: |
+          <dependency id="..." />
+      - pattern: |
+          <dependency id='...' />
+    message: |
+      A NuGet/Chocolatey dependency has no version constraint. Any published
+      version of this package will be resolved at install time, including future
+      versions. Pin to an exact version '[x.y.z]' or a bounded range '[x.y, z.0)'
+      to prevent unintended upgrades or dependency confusion attacks.
+    severity: WARNING
+    languages: [generic]
+    metadata:
+      category: security
+      cwe: "CWE-1104: Use of Unmaintained Third-Party Components"
+      confidence: HIGH
