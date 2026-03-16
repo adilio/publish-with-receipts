@@ -107,7 +107,7 @@ function Test-Command {
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
-$outputPath = Join-Path $script:repoRoot $OutputDir
+$outputPath = if ([System.IO.Path]::IsPathRooted($OutputDir)) { $OutputDir } else { Join-Path $script:repoRoot $OutputDir }
 if (-not (Test-Path $outputPath)) {
     New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
 }
@@ -244,10 +244,13 @@ function Invoke-DependencyPinCheck {
             if ($req -is [string]) {
                 $pinFindings.Add("[HIGH] $($_.Name) — RequiredModules '$req' has no version constraint")
             } elseif ($req -is [hashtable]) {
-                $name = $req.ModuleName
-                if (-not $req.RequiredVersion -and -not $req.MaximumVersion -and $req.ModuleVersion) {
+                $name            = if ($req.ContainsKey('ModuleName'))      { $req['ModuleName'] }      else { '(unknown)' }
+                $hasRequired     = $req.ContainsKey('RequiredVersion') -and $req['RequiredVersion']
+                $hasMaximum      = $req.ContainsKey('MaximumVersion')  -and $req['MaximumVersion']
+                $hasMinimum      = $req.ContainsKey('ModuleVersion')   -and $req['ModuleVersion']
+                if (-not $hasRequired -and -not $hasMaximum -and $hasMinimum) {
                     $pinFindings.Add("[MEDIUM] $($_.Name) — Module '$name' uses ModuleVersion (minimum) without MaximumVersion or RequiredVersion")
-                } elseif (-not $req.RequiredVersion -and -not $req.ModuleVersion) {
+                } elseif (-not $hasRequired -and -not $hasMinimum) {
                     $pinFindings.Add("[HIGH] $($_.Name) — Module '$name' has no version constraint")
                 }
             }

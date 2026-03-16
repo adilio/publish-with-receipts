@@ -1,0 +1,192 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'tests/**'
+      - 'examples/powershell-module/**'
+      - 'semgrep-rules/**'
+      - 'actions/**'
+      - 'scripts/**'
+      - '.github/workflows/run-tests.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'tests/**'
+      - 'examples/powershell-module/**'
+      - 'semgrep-rules/**'
+      - 'actions/**'
+      - 'scripts/**'
+      - '.github/workflows/run-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write        # For publishing test results as PR checks
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Unit tests — no external tool dependencies
+  # Fast; runs on every push/PR.
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+
+      - name: Run unit tests
+        shell: pwsh
+        run: |
+          ./tests/Run-Tests.ps1 -Scope unit -OutputFormat Detailed -JUnitOutput ./unit-test-results.xml
+
+      - name: Publish unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: unit-test-results.xml
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Integration tests — requires PSScriptAnalyzer and Semgrep
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -SkipPublisherCheck -Scope CurrentUser
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run integration tests
+        shell: pwsh
+        run: |
+          ./tests/Run-Tests.ps1 -Scope integration -OutputFormat Detailed -JUnitOutput ./integration-test-results.xml
+
+      - name: Run Semgrep rule tests (semgrep --test)
+        run: semgrep --test semgrep-rules/
+
+      - name: Publish integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: integration-test-results.xml
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Module functional tests — Pester tests for ExampleModule
+  # Requires Az.Accounts (installs during the step).
+  # ---------------------------------------------------------------------------
+  module-tests:
+    name: Module Functional Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Pester and dependencies
+        shell: pwsh
+        run: |
+          Install-Module Pester       -MinimumVersion 5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Install-Module Az.Accounts  -Force -SkipPublisherCheck -Scope CurrentUser -AllowClobber
+
+      - name: Run module functional tests
+        shell: pwsh
+        run: |
+          $result = Invoke-Pester -Path examples/powershell-module/tests -PassThru -Output Detailed
+          if ($result.FailedCount -gt 0) {
+            Write-Error "Module tests: $($result.FailedCount) test(s) failed."
+            exit 1
+          }
+
+  # ---------------------------------------------------------------------------
+  # E2E tests — run Invoke-LocalValidation.ps1
+  # Requires PSScriptAnalyzer and Semgrep; skips Syft/Grype steps.
+  # ---------------------------------------------------------------------------
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.0 -Force -SkipPublisherCheck -Scope CurrentUser
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -SkipPublisherCheck -Scope CurrentUser
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run e2e tests
+        shell: pwsh
+        run: |
+          ./tests/Run-Tests.ps1 -Scope e2e -OutputFormat Detailed -JUnitOutput ./e2e-test-results.xml
+
+      - name: Publish e2e test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: e2e-test-results.xml
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Summary job — fails if any test job fails
+  # ---------------------------------------------------------------------------
+  all-tests-pass:
+    name: All Tests Passed
+    needs: [unit-tests, integration-tests, module-tests, e2e-tests]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.unit-tests.result }}" != "success" ]]; then
+            echo "Unit tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.integration-tests.result }}" != "success" ]]; then
+            echo "Integration tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.module-tests.result }}" != "success" ]]; then
+            echo "Module tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.e2e-tests.result }}" != "success" ]]; then
+            echo "E2E tests failed"
+            exit 1
+          fi
+          echo "All test jobs passed."
