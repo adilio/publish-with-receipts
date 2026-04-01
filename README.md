@@ -118,9 +118,15 @@ The pipeline outputs (SBOMs, SARIF, provenance artifacts) are designed to be use
 
 See <docs/enterprise-integration.md> for details on how the pipeline-level outputs connect to runtime context.
 
+## Presentation
+
+The `presentation.md` deck uses the **Summit 2026 Marp theme** by [HeyItsGilbert](https://github.com/HeyItsGilbert/PSSummit2026). The `summit-2026.css` in this repo is taken directly from that project. See [AGENTS.md](AGENTS.md) for usage and export instructions.
+
+The presentation was reviewed using the **death-by-ppt skill** by [HeyItsGilbert](https://github.com/HeyItsGilbert/marketplace/blob/main/plugins/presentation-review/skills/death-by-ppt/SKILL.md), stored locally at [.claude/skills/death-by-ppt/SKILL.md](.claude/skills/death-by-ppt/SKILL.md).
+
 ## Background
 
-This repo is the companion material for the talk **“Provenance Before Publish: Securing PowerShell and Chocolatey Supply Chains from the Pipeline Out”** presented at Chocolatey Fest 2026.
+This repo is the companion material for the talk **”Provenance Before Publish: Securing PowerShell and Chocolatey Supply Chains from the Pipeline Out”** presented at Chocolatey Fest 2026.
 
 The talk covers the threat model, walks through the tooling decisions, and demonstrates the full pipeline end to end. But you don’t need to have seen the talk to use the repo. The docs folder covers the same ground.
 
