@@ -17,6 +17,10 @@
     asserts that the expected rule ID appears in the JSON output.
 #>
 
+BeforeDiscovery {
+    $semgrepAvailable = $null -ne (Get-Command semgrep -ErrorAction SilentlyContinue)
+}
+
 BeforeAll {
     $script:semgrepAvailable = $null -ne (Get-Command semgrep -ErrorAction SilentlyContinue)
     $script:repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -50,7 +54,7 @@ BeforeAll {
     }
 }
 
-Describe 'Semgrep — PowerShell rules detect anti-patterns' -Skip:(-not $script:semgrepAvailable) {
+Describe 'Semgrep — PowerShell rules detect anti-patterns' -Skip:(-not $semgrepAvailable) {
 
     Context 'powershell-download-execute' {
         It 'fires on Invoke-UnsafeFunction.ps1 (IWR + IEX pattern)' {
@@ -128,7 +132,7 @@ Describe 'Semgrep — PowerShell rules detect anti-patterns' -Skip:(-not $script
     }
 }
 
-Describe 'Semgrep — Chocolatey rules detect anti-patterns' -Skip:(-not $script:semgrepAvailable) {
+Describe 'Semgrep — Chocolatey rules detect anti-patterns' -Skip:(-not $semgrepAvailable) {
 
     Context 'choco-unverified-download' {
         It 'fires on chocolateyInstall.ps1 (Invoke-WebRequest -Uri ... -OutFile)' {
@@ -189,7 +193,7 @@ Describe 'Semgrep — Chocolatey rules detect anti-patterns' -Skip:(-not $script
     }
 }
 
-Describe 'Semgrep — Rule file syntax is valid' -Skip:(-not $script:semgrepAvailable) {
+Describe 'Semgrep — Rule file syntax is valid' -Skip:(-not $semgrepAvailable) {
     It 'PowerShell rules file has valid Semgrep YAML syntax' {
         $output = semgrep --validate --config $script:psRules 2>&1
         $LASTEXITCODE | Should -Be 0

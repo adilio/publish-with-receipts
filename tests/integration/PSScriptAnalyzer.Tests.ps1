@@ -14,6 +14,10 @@
     To install: Install-Module PSScriptAnalyzer -Scope CurrentUser
 #>
 
+BeforeDiscovery {
+    $psaAvailable = $null -ne (Get-Module PSScriptAnalyzer -ListAvailable -ErrorAction SilentlyContinue)
+}
+
 BeforeAll {
     $script:psaAvailable = $null -ne (Get-Module PSScriptAnalyzer -ListAvailable -ErrorAction SilentlyContinue)
     if ($script:psaAvailable) {
@@ -26,7 +30,7 @@ BeforeAll {
     $script:unsafePath = Join-Path $script:repoRoot 'examples/powershell-module/ExampleModule/Public/Invoke-UnsafeFunction.ps1'
 }
 
-Describe 'PSScriptAnalyzer — module analysis' -Skip:(-not $script:psaAvailable) {
+Describe 'PSScriptAnalyzer — module analysis' -Skip:(-not $psaAvailable) {
 
     Context 'Invoke-SafeFunction.ps1 — clean reference implementation' {
         BeforeAll {
@@ -56,12 +60,13 @@ Describe 'PSScriptAnalyzer — module analysis' -Skip:(-not $script:psaAvailable
             }
         }
 
-        It 'all findings have a RuleName, Severity, ScriptName, and Line' {
+        It 'all findings have a RuleName, Severity, and ScriptName' {
             foreach ($finding in $script:moduleResults) {
                 $finding.RuleName   | Should -Not -BeNullOrEmpty
                 $finding.Severity   | Should -Not -BeNullOrEmpty
                 $finding.ScriptName | Should -Not -BeNullOrEmpty
-                $finding.Line       | Should -BeGreaterThan 0
+                # Line is 0/null for file-level findings (e.g. PSUseBOMForUnicodeEncodedFile)
+                [int]$finding.Line  | Should -BeGreaterOrEqual 0
             }
         }
     }
@@ -104,11 +109,11 @@ Describe 'PSScriptAnalyzer — module analysis' -Skip:(-not $script:psaAvailable
 }
 
 Describe 'PSScriptAnalyzer — module availability' {
-    It 'PSScriptAnalyzer module is importable when installed' -Skip:(-not $script:psaAvailable) {
+    It 'PSScriptAnalyzer module is importable when installed' -Skip:(-not $psaAvailable) {
         { Import-Module PSScriptAnalyzer -ErrorAction Stop } | Should -Not -Throw
     }
 
-    It 'Invoke-ScriptAnalyzer command is available when module is loaded' -Skip:(-not $script:psaAvailable) {
+    It 'Invoke-ScriptAnalyzer command is available when module is loaded' -Skip:(-not $psaAvailable) {
         Get-Command Invoke-ScriptAnalyzer | Should -Not -BeNullOrEmpty
     }
 }

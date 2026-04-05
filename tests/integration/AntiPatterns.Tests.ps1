@@ -21,6 +21,18 @@
     - Chocolatey package spec (.nuspec) flaws
 #>
 
+BeforeDiscovery {
+    # Variables set here are available during discovery — needed for -Skip: on Describe blocks.
+    $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+    $allExamplesExist = (
+        (Test-Path (Join-Path $repoRoot 'examples/powershell-module/ExampleModule/ExampleModule.psd1'))          -and
+        (Test-Path (Join-Path $repoRoot 'examples/powershell-module/ExampleModule/Public/Invoke-UnsafeFunction.ps1')) -and
+        (Test-Path (Join-Path $repoRoot 'examples/powershell-module/ExampleModule/Public/Invoke-SafeFunction.ps1'))   -and
+        (Test-Path (Join-Path $repoRoot 'examples/chocolatey-package/tools/chocolateyInstall.ps1'))              -and
+        (Test-Path (Join-Path $repoRoot 'examples/chocolatey-package/example-package.nuspec'))
+    )
+}
+
 BeforeAll {
     $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
@@ -38,14 +50,10 @@ BeforeAll {
     $script:installContent = Get-Content $script:installPath -Raw
     $script:nuspecContent  = Get-Content $script:nuspecPath  -Raw
 
-    # All example files must exist
-    $script:allExamplesExist = (
-        (Test-Path $script:psd1Path)    -and
-        (Test-Path $script:unsafePath)  -and
-        (Test-Path $script:safePath)    -and
-        (Test-Path $script:installPath) -and
-        (Test-Path $script:nuspecPath)
-    )
+    # Comment-stripped variants — used for assertions that check absence of keys/patterns
+    # to avoid false matches against comment text in the source files.
+    $script:psd1ActiveContent   = ($script:psd1Content  -split "`n") -notmatch '^\s*#' -join "`n"
+    $script:nuspecActiveContent = $script:nuspecContent -replace '(?s)<!--.*?-->', ''
 }
 
 Describe 'Example file existence' {
@@ -69,7 +77,7 @@ Describe 'Example file existence' {
     }
 }
 
-Describe 'ExampleModule.psd1 — intentional anti-patterns' -Skip:(-not $script:allExamplesExist) {
+Describe 'ExampleModule.psd1 — intentional anti-patterns' -Skip:(-not $allExamplesExist) {
 
     Context 'Floating dependency (Threat Vector 3)' {
         It 'uses ModuleVersion (minimum) without RequiredVersion for Az.Accounts' {
@@ -78,7 +86,7 @@ Describe 'ExampleModule.psd1 — intentional anti-patterns' -Skip:(-not $script:
         }
 
         It 'does NOT use RequiredVersion for any module (would be pinned)' {
-            $script:psd1Content | Should -Not -Match 'RequiredVersion'
+            $script:psd1ActiveContent | Should -Not -Match 'RequiredVersion'
         }
 
         It 'declares Az.Accounts as a required module' {
@@ -110,16 +118,16 @@ Describe 'ExampleModule.psd1 — intentional anti-patterns' -Skip:(-not $script:
         }
 
         It 'PSData block is missing ProjectUri' {
-            $script:psd1Content | Should -Not -Match 'ProjectUri\s*='
+            $script:psd1ActiveContent | Should -Not -Match 'ProjectUri\s*='
         }
 
         It 'PSData block is missing LicenseUri' {
-            $script:psd1Content | Should -Not -Match 'LicenseUri\s*='
+            $script:psd1ActiveContent | Should -Not -Match 'LicenseUri\s*='
         }
     }
 }
 
-Describe 'Invoke-UnsafeFunction.ps1 — intentional anti-patterns' -Skip:(-not $script:allExamplesExist) {
+Describe 'Invoke-UnsafeFunction.ps1 — intentional anti-patterns' -Skip:(-not $allExamplesExist) {
 
     Context 'Hardcoded secret (Threat Vector 4)' {
         It 'contains a hardcoded API key assignment' {
@@ -173,7 +181,7 @@ Describe 'Invoke-UnsafeFunction.ps1 — intentional anti-patterns' -Skip:(-not $
     }
 }
 
-Describe 'Invoke-SafeFunction.ps1 — clean reference implementation' -Skip:(-not $script:allExamplesExist) {
+Describe 'Invoke-SafeFunction.ps1 — clean reference implementation' -Skip:(-not $allExamplesExist) {
 
     It 'does NOT contain Invoke-Expression' {
         $script:safeContent | Should -Not -Match 'Invoke-Expression|IEX'
@@ -200,7 +208,7 @@ Describe 'Invoke-SafeFunction.ps1 — clean reference implementation' -Skip:(-no
     }
 }
 
-Describe 'chocolateyInstall.ps1 — intentional anti-patterns' -Skip:(-not $script:allExamplesExist) {
+Describe 'chocolateyInstall.ps1 — intentional anti-patterns' -Skip:(-not $allExamplesExist) {
 
     Context 'Missing checksum (Threat Vector 5)' {
         It 'contains an external URL for binary download' {
@@ -237,7 +245,7 @@ Describe 'chocolateyInstall.ps1 — intentional anti-patterns' -Skip:(-not $scri
     Context 'Undocumented registry write (Threat Vector 6)' {
         It 'writes to HKLM registry' {
             # Triggers: choco-registry-write-undocumented
-            $script:installContent | Should -Match "HKLM:\\\\SOFTWARE"
+            $script:installContent | Should -Match "HKLM:\\SOFTWARE"
         }
 
         It 'uses New-Item for registry key creation' {
@@ -257,7 +265,7 @@ Describe 'chocolateyInstall.ps1 — intentional anti-patterns' -Skip:(-not $scri
     }
 }
 
-Describe 'example-package.nuspec — intentional anti-patterns' -Skip:(-not $script:allExamplesExist) {
+Describe 'example-package.nuspec — intentional anti-patterns' -Skip:(-not $allExamplesExist) {
 
     Context 'Unpinned dependencies (Threat Vector 3)' {
         It 'declares chocolatey-core.extension dependency' {
@@ -275,7 +283,7 @@ Describe 'example-package.nuspec — intentional anti-patterns' -Skip:(-not $scr
 
         It 'does NOT use exact-pin bracket notation for any dependency' {
             # Exact pin would look like version="[3.2.1]"
-            $script:nuspecContent | Should -Not -Match 'version="\['
+            $script:nuspecActiveContent | Should -Not -Match 'version="\['
         }
     }
 
