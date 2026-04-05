@@ -21,6 +21,10 @@ inputs:
     description: 'Whether to upload the SBOM as a GitHub Actions artifact.'
     required: false
     default: 'true'
+  syft-version:
+    description: 'Version of Syft to install. Pin this for reproducible builds.'
+    required: false
+    default: '1.28.0'
 
 outputs:
   sbom-path:
@@ -33,12 +37,14 @@ runs:
     - name: Install Syft
       shell: bash
       run: |
-        if ! command -v syft &> /dev/null; then
-          echo "Installing Syft..."
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+        SYFT_VERSION="${{ inputs.syft-version }}"
+        if command -v syft &> /dev/null && syft version | grep -q "$SYFT_VERSION"; then
+          echo "Syft $SYFT_VERSION already installed."
         else
-          echo "Syft already installed: $(syft version)"
+          echo "Installing Syft $SYFT_VERSION..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin "v$SYFT_VERSION"
         fi
+        echo "Syft version: $(syft version)"
 
     - name: Generate SBOM
       shell: bash
@@ -65,7 +71,7 @@ runs:
 
     - name: Upload SBOM artifact
       if: inputs.upload-artifact == 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ inputs.output-file }}

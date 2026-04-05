@@ -29,6 +29,10 @@ inputs:
       Minimum severity to report. Valid values: INFO, WARNING, ERROR.
     required: false
     default: 'WARNING'
+  semgrep-version:
+    description: 'Version of Semgrep to install. Pin this for reproducible builds.'
+    required: false
+    default: '1.115.0'
 
 outputs:
   sarif-path:
@@ -41,12 +45,14 @@ runs:
     - name: Install Semgrep
       shell: bash
       run: |
-        if ! command -v semgrep &> /dev/null; then
-          echo "Installing Semgrep..."
-          pip install semgrep --quiet
+        SEMGREP_VERSION="${{ inputs.semgrep-version }}"
+        if command -v semgrep &> /dev/null && semgrep --version | grep -q "$SEMGREP_VERSION"; then
+          echo "Semgrep $SEMGREP_VERSION already installed."
         else
-          echo "Semgrep already installed: $(semgrep --version)"
+          echo "Installing Semgrep $SEMGREP_VERSION..."
+          pip install "semgrep==$SEMGREP_VERSION" --quiet
         fi
+        echo "Semgrep version: $(semgrep --version)"
 
     - name: Run Semgrep
       id: scan
@@ -90,7 +96,7 @@ runs:
         fi
 
     - name: Upload SARIF to GitHub Code Scanning
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@018511a1aac61b6e92783189d8c0081eb8f69932 # v3.28.13
       if: always() && hashFiles(inputs.sarif-output) != ''
       with:
         sarif_file: ${{ inputs.sarif-output }}
