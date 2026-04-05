@@ -88,7 +88,7 @@ $testPaths = switch ($Scope) {
 }
 
 # Filter to paths that exist
-$testPaths = $testPaths | Where-Object { Test-Path $_ }
+$testPaths = @($testPaths | Where-Object { Test-Path $_ })
 
 if ($testPaths.Count -eq 0) {
     Write-Error "No test paths found for scope '$Scope'."

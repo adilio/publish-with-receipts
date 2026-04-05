@@ -46,23 +46,7 @@ runs:
         $nuspecPath = '${{ inputs.nuspec-path }}'
         $failOnUnpinned = '${{ inputs.fail-on-unpinned }}' -eq 'true'
 
-        # -----------------------------------------------------------------------
-        # Helper: parse a version string and classify its pinning level
-        #   exact   = '1.2.3'        (good)
-        #   bounded = '[1.0, 2.0)'   (acceptable)
-        #   minimum = '1.0'          (floating — ModuleVersion semantics)
-        #   none    = ''             (unpinned)
-        # -----------------------------------------------------------------------
-        function Get-PinLevel {
-          param([string]$Version)
-          if ([string]::IsNullOrWhiteSpace($Version)) { return 'none' }
-          # NuGet/nuspec range notation
-          if ($Version -match '^\[' -or $Version -match '^\(') { return 'bounded' }
-          # Exact three-part semver
-          if ($Version -match '^\d+\.\d+\.\d+(\.\d+)?$') { return 'exact' }
-          # Anything else (e.g. '1.0', '2') is treated as minimum
-          return 'minimum'
-        }
+        . "${{ github.action_path }}/../../lib/Get-PinLevel.ps1"
 
         # -----------------------------------------------------------------------
         # Analyse .psd1 module manifests

@@ -68,6 +68,10 @@ $script:exitCode  = 0
 $script:findings  = [System.Collections.Generic.List[string]]::new()
 $script:repoRoot  = Split-Path -Parent $PSScriptRoot
 
+# Load shared library functions
+. "$script:repoRoot/lib/ConvertTo-Sarif.ps1"
+. "$script:repoRoot/lib/Get-PinLevel.ps1"
+
 function Write-Header {
     param([string]$Title)
     Write-Host ""
@@ -158,29 +162,8 @@ function Invoke-PSScriptAnalyzerCheck {
         }
     }
 
-    # Minimal SARIF output (console SARIF writer)
     $sarifPath = Join-Path $outputPath $SarifOutput
-    $sarif = @{
-        '$schema' = 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json'
-        version   = '2.1.0'
-        runs      = @(@{
-            tool    = @{ driver = @{ name = 'PSScriptAnalyzer'; version = (Get-Module PSScriptAnalyzer -ListAvailable | Select-Object -First 1).Version.ToString() } }
-            results = @($results | ForEach-Object {
-                @{
-                    ruleId  = $_.RuleName
-                    level   = if ($_.Severity -eq 'Error') { 'error' } else { 'warning' }
-                    message = @{ text = $_.Message }
-                    locations = @(@{
-                        physicalLocation = @{
-                            artifactLocation = @{ uri = $_.ScriptPath }
-                            region           = @{ startLine = $_.Line; startColumn = $_.Column }
-                        }
-                    })
-                }
-            })
-        })
-    }
-    $sarif | ConvertTo-Json -Depth 10 | Set-Content -Path $sarifPath -Encoding utf8
+    ConvertTo-Sarif -Results $results -OutputPath $sarifPath
     Write-Host "  SARIF written to: $sarifPath"
 }
 

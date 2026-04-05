@@ -15,34 +15,7 @@
 #>
 
 BeforeAll {
-    # Define the function under test — same algorithm as in action.yml.
-    # Uses [Array]::CreateInstance and GetValue/SetValue instead of [int[,]]::new()
-    # because Pester's BeforeAll scope interacts poorly with [int[,]] indexer syntax.
-    function Get-LevenshteinDistance {
-        param([string]$Source, [string]$Target)
-        $s = $Source.ToLower()
-        $t = $Target.ToLower()
-        $n = $s.Length
-        $m = $t.Length
-        if ($n -eq 0) { return $m }
-        if ($m -eq 0) { return $n }
-
-        $d = [Array]::CreateInstance([int], $n + 1, $m + 1)
-        for ($i = 0; $i -le $n; $i++) { $d.SetValue($i, $i, 0) }
-        for ($j = 0; $j -le $m; $j++) { $d.SetValue($j, 0, $j) }
-
-        for ($i = 1; $i -le $n; $i++) {
-            for ($j = 1; $j -le $m; $j++) {
-                $cost      = if ($s[$i - 1] -eq $t[$j - 1]) { 0 } else { 1 }
-                $top       = [int]$d.GetValue($i - 1, $j)
-                $left      = [int]$d.GetValue($i, $j - 1)
-                $diagonal  = [int]$d.GetValue($i - 1, $j - 1)
-                $val = [Math]::Min([Math]::Min($top + 1, $left + 1), $diagonal + $cost)
-                $d.SetValue($val, $i, $j)
-            }
-        }
-        return [int]$d.GetValue($n, $m)
-    }
+    . "$PSScriptRoot/../../lib/Get-LevenshteinDistance.ps1"
 }
 
 Describe 'Get-LevenshteinDistance' {

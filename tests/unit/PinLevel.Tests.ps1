@@ -19,14 +19,7 @@
 #>
 
 BeforeAll {
-    # Define the function under test — same implementation as in action.yml
-    function Get-PinLevel {
-        param([string]$Version)
-        if ([string]::IsNullOrWhiteSpace($Version)) { return 'none' }
-        if ($Version -match '^\[' -or $Version -match '^\(') { return 'bounded' }
-        if ($Version -match '^\d+\.\d+\.\d+(\.\d+)?$') { return 'exact' }
-        return 'minimum'
-    }
+    . "$PSScriptRoot/../../lib/Get-PinLevel.ps1"
 }
 
 Describe 'Get-PinLevel' {

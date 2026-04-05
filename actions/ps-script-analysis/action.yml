@@ -87,55 +87,9 @@ runs:
         Write-Host "Total findings: $($results.Count)"
         Write-Host "Findings at or above '$severityThreshold': $($filtered.Count)"
 
-        # Build SARIF document
-        $runs = @(
-          @{
-            tool = @{
-              driver = @{
-                name            = 'PSScriptAnalyzer'
-                informationUri  = 'https://github.com/PowerShell/PSScriptAnalyzer'
-                rules           = @()
-              }
-            }
-            results = @(
-              $filtered | ForEach-Object {
-                $severity = switch ($_.Severity.ToString()) {
-                  'Error'       { 'error' }
-                  'Warning'     { 'warning' }
-                  'Information' { 'note' }
-                  default       { 'note' }
-                }
-                @{
-                  ruleId  = $_.RuleName
-                  level   = $severity
-                  message = @{ text = $_.Message }
-                  locations = @(
-                    @{
-                      physicalLocation = @{
-                        artifactLocation = @{
-                          uri        = ($_.ScriptPath -replace [regex]::Escape("$($env:GITHUB_WORKSPACE)/"), '')
-                          uriBaseId  = '%SRCROOT%'
-                        }
-                        region = @{
-                          startLine   = $_.Line
-                          startColumn = $_.Column
-                        }
-                      }
-                    }
-                  )
-                }
-              }
-            )
-          }
-        )
-
-        $sarif = @{
-          '$schema' = 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json'
-          version   = '2.1.0'
-          runs      = $runs
-        }
-
-        $sarif | ConvertTo-Json -Depth 20 | Out-File -FilePath $sarifOutput -Encoding utf8
+        # Build SARIF document using shared builder
+        . "${{ github.action_path }}/../../lib/ConvertTo-Sarif.ps1"
+        ConvertTo-Sarif -Results $filtered -OutputPath $sarifOutput -WorkspacePath $env:GITHUB_WORKSPACE
         Write-Host "SARIF written to: $sarifOutput"
 
         "sarif-path=$sarifOutput"    >> $env:GITHUB_OUTPUT
