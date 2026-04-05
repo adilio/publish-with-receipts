@@ -6,7 +6,7 @@ rules:
   # enforce checksum validation. Direct use of Invoke-WebRequest bypasses this.
   # ---------------------------------------------------------------------------
   - id: choco-unverified-download
-    patterns:
+    pattern-either:
       - pattern: |
           Invoke-WebRequest -Uri $... -OutFile $...
       - pattern: |
@@ -68,7 +68,7 @@ rules:
   # Detects patterns where a downloaded file is immediately invoked/executed.
   # ---------------------------------------------------------------------------
   - id: choco-execute-downloaded-content
-    patterns:
+    pattern-either:
       - pattern: |
           $... = Join-Path $toolsDir ...
           Invoke-WebRequest -Uri $... -OutFile $...
@@ -117,7 +117,7 @@ rules:
   # Flags direct registry writes that should be documented and cleaned up.
   # ---------------------------------------------------------------------------
   - id: choco-registry-write-undocumented
-    patterns:
+    pattern-either:
       - pattern: |
           New-Item -Path "HKLM:\..." ...
       - pattern: |
@@ -142,7 +142,7 @@ rules:
   # that may be published to the community repo.
   # ---------------------------------------------------------------------------
   - id: choco-hardcoded-internal-url
-    patterns:
+    pattern-either:
       - pattern: |
           $... = "https://internal-..."
       - pattern: |
@@ -169,7 +169,7 @@ rules:
   # Weak hash algorithms should not be used for integrity verification.
   # ---------------------------------------------------------------------------
   - id: choco-weak-checksum-algorithm
-    patterns:
+    pattern-either:
       - pattern: |
           checksumType = "md5"
       - pattern: |
@@ -221,7 +221,7 @@ rules:
   # scheduled user — often SYSTEM. They must be removed during uninstall.
   # ---------------------------------------------------------------------------
   - id: choco-scheduled-task-undocumented
-    patterns:
+    pattern-either:
       - pattern: |
           New-ScheduledTask ...
       - pattern: |
@@ -248,7 +248,7 @@ rules:
   # uninstall. Lingering services expand the attack surface of the host.
   # ---------------------------------------------------------------------------
   - id: choco-service-install-no-cleanup
-    patterns:
+    pattern-either:
       - pattern: |
           New-Service -Name $... ...
       - pattern: |
@@ -272,7 +272,7 @@ rules:
   # any version (including a newly-published malicious one) can be installed.
   # ---------------------------------------------------------------------------
   - id: nuspec-unpinned-dependency
-    patterns:
+    pattern-either:
       - pattern: |
           <dependency id="..." />
       - pattern: |

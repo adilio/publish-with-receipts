@@ -7,7 +7,7 @@ rules:
   # who controls the remote endpoint can execute arbitrary code.
   # ---------------------------------------------------------------------------
   - id: powershell-download-execute
-    patterns:
+    pattern-either:
       - pattern: |
           $... = Invoke-WebRequest ...
           ...
@@ -17,6 +17,14 @@ rules:
           ...
           Invoke-Expression $...
       - pattern: |
+          $... = irm ...
+          ...
+          Invoke-Expression $...
+      - pattern: |
+          $... = irm ...
+          ...
+          IEX $...
+      - pattern: |
           Invoke-Expression (Invoke-WebRequest ...)
       - pattern: |
           Invoke-Expression (Invoke-RestMethod ...)
@@ -24,6 +32,8 @@ rules:
           IEX (Invoke-WebRequest ...)
       - pattern: |
           IEX (IWR ...)
+      - pattern: |
+          IEX (irm ...)
     message: |
       Download-and-execute pattern detected. The result of a web request is being
       passed to Invoke-Expression, which executes it as PowerShell code. An attacker
@@ -44,28 +54,25 @@ rules:
   # Matches common patterns for hardcoded credentials assigned to variables.
   # ---------------------------------------------------------------------------
   - id: powershell-hardcoded-secret
-    patterns:
-      - pattern: |
-          $ApiKey = "..."
-      - pattern: |
-          $Token = "..."
-      - pattern: |
-          $Secret = "..."
-      - pattern: |
-          $Password = "..."
-      - pattern: |
-          $AccessKey = "..."
-      - pattern: |
-          $ClientSecret = "..."
-    pattern-not:
-      - pattern: |
-          $ApiKey = $env:...
-      - pattern: |
-          $Token = $env:...
-      - pattern: |
-          $Secret = $env:...
-      - pattern: |
-          $Password = $env:...
+    pattern-either:
+      - patterns:
+          - pattern: $ApiKey = "..."
+          - pattern-not: $ApiKey = $env:...
+      - patterns:
+          - pattern: $Token = "..."
+          - pattern-not: $Token = $env:...
+      - patterns:
+          - pattern: $Secret = "..."
+          - pattern-not: $Secret = $env:...
+      - patterns:
+          - pattern: $Password = "..."
+          - pattern-not: $Password = $env:...
+      - patterns:
+          - pattern: $AccessKey = "..."
+          - pattern-not: $AccessKey = $env:...
+      - patterns:
+          - pattern: $ClientSecret = "..."
+          - pattern-not: $ClientSecret = $env:...
     message: |
       Potential hardcoded secret detected. Credentials, API keys, and tokens should
       never be stored in source code. Use environment variables, GitHub Actions
@@ -105,7 +112,7 @@ rules:
   # Encoding is a common obfuscation technique used to hide malicious payloads.
   # ---------------------------------------------------------------------------
   - id: powershell-encoded-command
-    patterns:
+    pattern-either:
       - pattern: |
           powershell.exe -EncodedCommand ...
       - pattern: |
@@ -134,7 +141,7 @@ rules:
   # Lower severity than download-execute since there are legitimate uses.
   # ---------------------------------------------------------------------------
   - id: powershell-invoke-expression
-    patterns:
+    pattern-either:
       - pattern: Invoke-Expression ...
       - pattern: IEX ...
     message: |
@@ -199,7 +206,7 @@ rules:
   # originates from user input or a network response, this is code injection.
   # ---------------------------------------------------------------------------
   - id: powershell-add-type-dynamic
-    patterns:
+    pattern-either:
       - pattern: |
           Add-Type -TypeDefinition $...
       - pattern: |
@@ -222,7 +229,7 @@ rules:
   # path can load arbitrary DLLs, including those placed by an attacker.
   # ---------------------------------------------------------------------------
   - id: powershell-assembly-load-dynamic
-    patterns:
+    pattern-either:
       - pattern: |
           [System.Reflection.Assembly]::Load($...)
       - pattern: |
@@ -253,7 +260,7 @@ rules:
   # after transfer and compared to a known-good value.
   # ---------------------------------------------------------------------------
   - id: powershell-bits-transfer-no-verify
-    patterns:
+    pattern-either:
       - pattern: |
           Start-BitsTransfer -Source $... -Destination $dest
           ...
@@ -279,7 +286,7 @@ rules:
   # any version can be resolved, including a newly-published malicious one.
   # ---------------------------------------------------------------------------
   - id: powershell-unpinned-required-module
-    patterns:
+    pattern-either:
       - pattern: |
           RequiredModules = @( '...' )
       - pattern: |
