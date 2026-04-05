@@ -45,6 +45,13 @@ publish-with-receipts/
 │   ├── enterprise-integration.md   # Connecting outputs to SCA and cloud security platforms
 │   └── remediation-guide.md        # How to fix every finding type the pipeline surfaces
 │
+├── talk/                           # Slide deck, talk track, outline, Marp theme
+│   ├── presentation.md             # Main deck
+│   ├── talk-track.md               # Speaker notes
+│   ├── slides-and-talk-track.md    # Combined rehearsal doc
+│   ├── Outline.md                  # High-level session outline
+│   └── summit-2026.css             # Summit 2026 Marp theme
+│
 └── CONTRIBUTING.md                 # How to add rules, actions, and examples
 ```
 
@@ -120,7 +127,14 @@ See <docs/enterprise-integration.md> for details on how the pipeline-level outpu
 
 ## Presentation
 
-The `presentation.md` deck uses the **Summit 2026 Marp theme** by [HeyItsGilbert](https://github.com/HeyItsGilbert/PSSummit2026). The `summit-2026.css` in this repo is taken directly from that project. See [AGENTS.md](AGENTS.md) for usage and export instructions.
+The slide deck and speaker materials now live under `talk/`:
+
+- `talk/presentation.md`
+- `talk/talk-track.md`
+- `talk/slides-and-talk-track.md`
+- `talk/Outline.md`
+
+The deck uses the **Summit 2026 Marp theme** by [HeyItsGilbert](https://github.com/HeyItsGilbert/PSSummit2026), stored here as `talk/summit-2026.css`. See [AGENTS.md](AGENTS.md) for usage and export instructions.
 
 The presentation was reviewed using the **death-by-ppt skill** by [HeyItsGilbert](https://github.com/HeyItsGilbert/marketplace/blob/main/plugins/presentation-review/skills/death-by-ppt/SKILL.md), stored locally at [.claude/skills/death-by-ppt/SKILL.md](.claude/skills/death-by-ppt/SKILL.md).
 
@@ -146,6 +160,38 @@ Before pushing, run the local validation script to get the same feedback that CI
 ```
 
 Required tools: `Install-Module PSScriptAnalyzer`, `pip install semgrep`, and optionally [Syft](https://github.com/anchore/syft) and [Grype](https://github.com/anchore/grype).
+
+## Required permissions
+
+The provenance-generate action uses `actions/upload-artifact` and the semgrep/vulnerability-scan actions upload SARIF to GitHub Code Scanning. Your workflow needs:
+
+```yaml
+permissions:
+  contents: read
+  security-events: write  # for SARIF upload to Code Scanning
+  id-token: write         # for provenance attestation signing
+  actions: read
+```
+
+The `id-token: write` permission is required for provenance generation. Without it, the provenance artifact is still created and uploaded, but it cannot be signed or verified with `slsa-verifier`. If you don't need signed attestations, you can omit it — the pipeline will still run.
+
+## Suppressing false positives
+
+When a Semgrep or PSScriptAnalyzer finding is a known false positive (e.g., intentional use of `Invoke-Expression` in a utility function), suppress it inline with a comment:
+
+**Semgrep:**
+```powershell
+# nosemgrep: powershell-invoke-expression
+$result = Invoke-Expression $localScriptBlock
+```
+
+**PSScriptAnalyzer:**
+```powershell
+[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
+param()
+```
+
+Suppressions should include a justification comment explaining why the finding is a false positive. See [docs/remediation-guide.md](docs/remediation-guide.md) for the full suppression reference.
 
 ## Remediating findings
 

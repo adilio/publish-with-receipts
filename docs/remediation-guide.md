@@ -12,6 +12,7 @@ This guide explains how to fix every finding type that the `publish-with-receipt
 4. [Dependency pin check](#dependency-pin-check)
 5. [Grype vulnerability scan](#grype-vulnerability-scan)
 6. [Provenance and SBOM](#provenance-and-sbom)
+7. [Suppressing false positives](#suppressing-false-positives)
 
 ---
 
@@ -538,3 +539,74 @@ To verify a provenance document is authentic (not forged after the fact), the cu
 2. Use `gh attestation verify` to verify artifacts against GitHub's Sigstore-backed attestation store.
 
 See [enterprise-integration.md](./enterprise-integration.md) for more detail on attestation options.
+
+---
+
+## Suppressing false positives
+
+Not every finding represents a real problem. When you've reviewed a finding and determined it's a false positive, suppress it inline with a justification comment so reviewers understand the decision.
+
+### Semgrep suppressions
+
+Add `# nosemgrep: <rule-id>` on the line before the flagged code:
+
+```powershell
+# nosemgrep: powershell-invoke-expression
+# Justification: $scriptBlock is a locally-defined [scriptblock], not external input.
+$result = Invoke-Expression $scriptBlock
+```
+
+To suppress multiple rules on a single line, separate rule IDs with commas:
+
+```powershell
+# nosemgrep: powershell-invoke-expression, powershell-download-execute
+$result = Invoke-Expression $localBlock
+```
+
+To suppress for an entire file, add the comment at the top:
+
+```powershell
+# nosemgrep
+# This file contains deliberately insecure patterns for testing purposes.
+```
+
+**Rule IDs** are the `id:` values in the YAML rule files:
+- `powershell-download-execute`
+- `powershell-hardcoded-secret`
+- `powershell-invoke-expression`
+- `powershell-encoded-command`
+- `choco-unverified-download`
+- etc. (see `semgrep-rules/*.yml`)
+
+### PSScriptAnalyzer suppressions
+
+Use the `[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute]` attribute to suppress findings on a function or script scope:
+
+```powershell
+# Suppress a single rule on a specific function
+function Write-StatusMessage {
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSAvoidUsingWriteHost',
+        '',
+        Justification = 'This is a user-facing status function; Write-Host is intentional.'
+    )]
+    param([string]$Message)
+    Write-Host $Message
+}
+```
+
+For script-level suppression, place the attribute at the top of the file:
+
+```powershell
+[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '')]
+param()
+```
+
+### When not to suppress
+
+Suppress only after you have:
+1. Read the rule description to understand what it's detecting
+2. Verified the specific instance is not exploitable in your context
+3. Added a justification comment explaining *why* it's safe
+
+A suppression without a justification is a finding deferred, not resolved. If you're not sure whether something is a real finding, err on the side of fixing it.
