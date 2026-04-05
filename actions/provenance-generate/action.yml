@@ -47,126 +47,111 @@ runs:
   steps:
     - name: Generate provenance document
       id: generate
-      shell: bash
+      shell: pwsh
       run: |
-        ARTIFACT_PATH="${{ inputs.artifact-path }}"
-        ARTIFACT_NAME="${{ inputs.artifact-name }}"
-        PROVENANCE_OUTPUT="${{ inputs.provenance-output }}"
-        SBOM_PATH="${{ inputs.sbom-path }}"
+        $artifactPath     = '${{ inputs.artifact-path }}'
+        $artifactName     = '${{ inputs.artifact-name }}'
+        $provenanceOutput = '${{ inputs.provenance-output }}'
+        $sbomPath         = '${{ inputs.sbom-path }}'
 
-        if [ ! -e "$ARTIFACT_PATH" ]; then
-          echo "::error::Artifact not found: $ARTIFACT_PATH"
+        if (-not (Test-Path $artifactPath)) {
+          Write-Error "Artifact not found: $artifactPath"
           exit 1
-        fi
+        }
 
-        # Compute artifact hash(es)
-        if [ -f "$ARTIFACT_PATH" ]; then
-          SHA256=$(sha256sum "$ARTIFACT_PATH" | awk '{print $1}')
-          ARTIFACT_SIZE=$(stat -c%s "$ARTIFACT_PATH")
-        elif [ -d "$ARTIFACT_PATH" ]; then
-          # For directories, hash a tar archive of the contents
-          SHA256=$(tar -c "$ARTIFACT_PATH" | sha256sum | awk '{print $1}')
-          ARTIFACT_SIZE=$(du -sb "$ARTIFACT_PATH" | awk '{print $1}')
-        fi
+        # Compute artifact hash and size
+        if (Test-Path $artifactPath -PathType Leaf) {
+          $sha256       = (Get-FileHash -Algorithm SHA256 $artifactPath).Hash.ToLower()
+          $artifactSize = (Get-Item $artifactPath).Length
+        } else {
+          # For directories, hash all files in deterministic order then hash the combined result
+          $allHashes = Get-ChildItem -Path $artifactPath -Recurse -File |
+            Sort-Object FullName |
+            ForEach-Object { (Get-FileHash -Algorithm SHA256 $_.FullName).Hash }
+          $combined     = $allHashes -join "`n"
+          $stream       = [System.IO.MemoryStream]::new([System.Text.Encoding]::UTF8.GetBytes($combined))
+          $sha256       = (Get-FileHash -Algorithm SHA256 -InputStream $stream).Hash.ToLower()
+          $stream.Dispose()
+          $artifactSize = (Get-ChildItem -Path $artifactPath -Recurse -File |
+            Measure-Object -Property Length -Sum).Sum
+        }
 
-        echo "Artifact SHA256: $SHA256"
-        echo "artifact-sha256=$SHA256" >> "$GITHUB_OUTPUT"
+        Write-Host "Artifact SHA256: $sha256"
+        "artifact-sha256=$sha256" >> $env:GITHUB_OUTPUT
 
         # Compute SBOM hash if provided
-        SBOM_DIGEST=""
-        if [ -n "$SBOM_PATH" ] && [ -f "$SBOM_PATH" ]; then
-          SBOM_DIGEST=$(sha256sum "$SBOM_PATH" | awk '{print $1}')
-        fi
+        $sbomDigest = ''
+        if ($sbomPath -and (Test-Path $sbomPath)) {
+          $sbomDigest = (Get-FileHash -Algorithm SHA256 $sbomPath).Hash.ToLower()
+        }
 
-        # Build the provenance document
-        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        RUNNER_OS="${{ runner.os }}"
-        RUNNER_ARCH="${{ runner.arch }}"
+        $timestamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 
-        python3 - <<PYEOF
-        import json, os
-
-        provenance = {
-          "_type": "https://in-toto.io/Statement/v0.1",
-          "subject": [
-            {
-              "name": "${ARTIFACT_NAME}",
-              "digest": {
-                "sha256": "${SHA256}"
+        $provenance = [ordered]@{
+          '_type'         = 'https://in-toto.io/Statement/v0.1'
+          'subject'       = @(
+            [ordered]@{
+              'name'   = $artifactName
+              'digest' = [ordered]@{ 'sha256' = $sha256 }
+            }
+          )
+          'predicateType' = 'https://slsa.dev/provenance/v0.2'
+          'predicate'     = [ordered]@{
+            'builder'     = [ordered]@{
+              'id' = "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+            'buildType'   = 'https://github.com/actions/workflow@v1'
+            'invocation'  = [ordered]@{
+              'configSource' = [ordered]@{
+                'uri'        = "git+https://github.com/${{ github.repository }}@${{ github.ref }}"
+                'digest'     = [ordered]@{ 'sha1' = '${{ github.sha }}' }
+                'entryPoint' = '${{ github.workflow }}'
+              }
+              'parameters'   = [ordered]@{
+                'event'    = '${{ github.event_name }}'
+                'ref'      = '${{ github.ref }}'
+                'workflow' = '${{ github.workflow }}'
+              }
+              'environment'  = [ordered]@{
+                'github_run_id'      = '${{ github.run_id }}'
+                'github_run_number'  = '${{ github.run_number }}'
+                'github_run_attempt' = '${{ github.run_attempt }}'
+                'runner_os'          = '${{ runner.os }}'
+                'runner_arch'        = '${{ runner.arch }}'
               }
             }
-          ],
-          "predicateType": "https://slsa.dev/provenance/v0.2",
-          "predicate": {
-            "builder": {
-              "id": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            },
-            "buildType": "https://github.com/actions/workflow@v1",
-            "invocation": {
-              "configSource": {
-                "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
-                "digest": {
-                  "sha1": "${{ github.sha }}"
-                },
-                "entryPoint": "${{ github.workflow }}"
-              },
-              "parameters": {
-                "event": "${{ github.event_name }}",
-                "ref": "${{ github.ref }}",
-                "workflow": "${{ github.workflow }}"
-              },
-              "environment": {
-                "github_run_id": "${{ github.run_id }}",
-                "github_run_number": "${{ github.run_number }}",
-                "github_run_attempt": "${{ github.run_attempt }}",
-                "runner_os": "${RUNNER_OS}",
-                "runner_arch": "${RUNNER_ARCH}"
+            'buildConfig' = @{}
+            'metadata'    = [ordered]@{
+              'buildInvocationId' = '${{ github.run_id }}-${{ github.run_attempt }}'
+              'buildStartedOn'    = $timestamp
+              'completeness'      = [ordered]@{
+                'parameters'  = $true
+                'environment' = $true
+                'materials'   = $false
               }
-            },
-            "buildConfig": {},
-            "metadata": {
-              "buildInvocationId": "${{ github.run_id }}-${{ github.run_attempt }}",
-              "buildStartedOn": "${TIMESTAMP}",
-              "completeness": {
-                "parameters": True,
-                "environment": True,
-                "materials": False
-              },
-              "reproducible": False
-            },
-            "materials": [
-              {
-                "uri": "git+https://github.com/${{ github.repository }}",
-                "digest": {
-                  "sha1": "${{ github.sha }}"
-                }
+              'reproducible' = $false
+            }
+            'materials'   = @(
+              [ordered]@{
+                'uri'    = "git+https://github.com/${{ github.repository }}"
+                'digest' = [ordered]@{ 'sha1' = '${{ github.sha }}' }
               }
-            ]
-          },
-          "attestation_metadata": {
-            "generated_by": "publish-with-receipts/provenance-generate",
-            "generated_at": "${TIMESTAMP}",
-            "artifact_path": "${ARTIFACT_PATH}",
-            "artifact_size_bytes": "${ARTIFACT_SIZE}",
-            "sbom_digest": "${SBOM_DIGEST}" if "${SBOM_DIGEST}" else None
+            )
+          }
+          'attestation_metadata' = [ordered]@{
+            'generated_by'        = 'publish-with-receipts/provenance-generate'
+            'generated_at'        = $timestamp
+            'artifact_path'       = $artifactPath
+            'artifact_size_bytes' = $artifactSize
           }
         }
 
-        # Remove None values
-        def remove_none(d):
-            if isinstance(d, dict):
-                return {k: remove_none(v) for k, v in d.items() if v is not None}
-            if isinstance(d, list):
-                return [remove_none(i) for i in d]
-            return d
+        if ($sbomDigest) {
+          $provenance.attestation_metadata['sbom_digest'] = $sbomDigest
+        }
 
-        provenance = remove_none(provenance)
-
-        with open("${PROVENANCE_OUTPUT}", "w") as f:
-            json.dump(provenance, f, indent=2)
-
-        print(f"Provenance written to: ${PROVENANCE_OUTPUT}")
-        PYEOF
+        $provenance | ConvertTo-Json -Depth 20 | Out-File -FilePath $provenanceOutput -Encoding utf8
+        Write-Host "Provenance written to: $provenanceOutput"
 
     - name: Upload provenance artifact
       if: inputs.upload-artifact == 'true'

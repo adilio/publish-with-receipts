@@ -98,7 +98,7 @@ runs:
               }
             }
             results = @(
-              $results | ForEach-Object {
+              $filtered | ForEach-Object {
                 $severity = switch ($_.Severity.ToString()) {
                   'Error'       { 'error' }
                   'Warning'     { 'warning' }
@@ -112,7 +112,10 @@ runs:
                   locations = @(
                     @{
                       physicalLocation = @{
-                        artifactLocation = @{ uri = $_.ScriptPath }
+                        artifactLocation = @{
+                          uri        = ($_.ScriptPath -replace [regex]::Escape("$($env:GITHUB_WORKSPACE)/"), '')
+                          uriBaseId  = '%SRCROOT%'
+                        }
                         region = @{
                           startLine   = $_.Line
                           startColumn = $_.Column

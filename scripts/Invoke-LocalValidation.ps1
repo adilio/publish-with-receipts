@@ -294,7 +294,7 @@ function Invoke-SBOMAndVulnScan {
     param([string]$Path, [string]$SbomName)
 
     if ($SkipSBOM) {
-        Write-Skip "SBOM/Grype skipped (use -SkipSBOM to re-enable)."
+        Write-Skip "SBOM/Grype skipped (-SkipSBOM is set). Omit -SkipSBOM to include these checks."
         return
     }
 

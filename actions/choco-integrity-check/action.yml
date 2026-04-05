@@ -19,13 +19,6 @@ inputs:
     description: 'Whether to fail if MD5 or SHA1 checksums are used.'
     required: false
     default: 'true'
-  verify-checksums-live:
-    description: |
-      Whether to actually download and verify checksums against live URLs.
-      This adds significant time and requires network access. Disabled by default.
-    required: false
-    default: 'false'
-
 outputs:
   issues-found:
     description: 'Whether any integrity issues were found (true/false).'
@@ -44,7 +37,6 @@ runs:
         $toolsPath    = '${{ inputs.tools-path }}'
         $failMissing  = '${{ inputs.fail-on-missing-checksum }}' -eq 'true'
         $failWeak     = '${{ inputs.fail-on-weak-algorithm }}' -eq 'true'
-        $verifyLive   = '${{ inputs.verify-checksums-live }}' -eq 'true'
 
         $issues = @()
 
@@ -107,13 +99,6 @@ runs:
           }
         } elseif (Test-Path $verificationFile) {
           Write-Host "VERIFICATION.txt present (no embedded binaries to verify against)."
-        }
-
-        # --- Live checksum verification (optional) ---
-        if ($verifyLive) {
-          Write-Host "Live checksum verification is enabled — this may take several minutes..."
-          # TODO: Parse URLs and checksums from install script, download, and verify
-          Write-Warning "Live verification not yet implemented. Set verify-checksums-live to 'false'."
         }
 
         # --- Results ---

@@ -75,7 +75,6 @@ jobs:
           tools-path: examples/chocolatey-package/tools
           fail-on-missing-checksum: 'false'  # Set to 'true' to enforce
           fail-on-weak-algorithm: 'true'
-          verify-checksums-live: 'false'
 
       # -----------------------------------------------------------------------
       # 4. Dependency Pin Check

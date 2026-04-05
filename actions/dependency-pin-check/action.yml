@@ -24,10 +24,6 @@ inputs:
     description: 'Fail the step if unpinned dependencies are found. Set to false to surface findings without blocking.'
     required: false
     default: 'false'
-  severity-threshold:
-    description: 'Minimum severity level to report: low, medium, high. Unpinned = medium, no version = high.'
-    required: false
-    default: 'low'
 
 outputs:
   unpinned-count:
