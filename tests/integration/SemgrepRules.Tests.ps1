@@ -50,7 +50,11 @@ BeforeAll {
     function Get-MatchedRuleIds {
         param($SemgrepOutput)
         if (-not $SemgrepOutput -or -not $SemgrepOutput.results) { return @() }
-        return $SemgrepOutput.results | Select-Object -ExpandProperty check_id
+        # check_id is prefixed with the config path (e.g. "semgrep-rules.powershell-download-execute").
+        # Strip everything up to and including the last dot to return just the rule ID.
+        return $SemgrepOutput.results | ForEach-Object {
+            ($_.check_id -split '\.')[-1]
+        }
     }
 }
 
