@@ -121,9 +121,19 @@ rules:
       - pattern: |
           New-Item -Path "HKLM:\..." ...
       - pattern: |
+          New-Item -Path 'HKLM:\...' ...
+      - pattern: |
           Set-ItemProperty -Path "HKLM:\..." ...
       - pattern: |
+          Set-ItemProperty -Path 'HKLM:\...' ...
+      - pattern: |
           New-ItemProperty -Path "HKLM:\..." ...
+      - pattern: |
+          New-ItemProperty -Path 'HKLM:\...' ...
+      - pattern: |
+          $... = "HKLM:\..."
+      - pattern: |
+          $... = 'HKLM:\...'
     message: |
       A registry key is being created or modified under HKLM. Registry writes made
       during install should be documented and removed during uninstall. Ensure the
@@ -146,11 +156,19 @@ rules:
       - pattern: |
           $... = "https://internal-..."
       - pattern: |
+          $... = 'https://internal-...'
+      - pattern: |
           $... = "http://internal-..."
+      - pattern: |
+          $... = 'http://internal-...'
       - pattern: |
           $... = "\\\\corp...."
       - pattern: |
+          $... = '\\corp....'
+      - pattern: |
           UpdateServer = "https://internal-..."
+      - pattern: |
+          UpdateServer = 'https://internal-...'
     message: |
       A hardcoded internal URL or network path has been detected. Internal URLs
       (e.g., intranet servers, internal update endpoints, UNC paths) should not
