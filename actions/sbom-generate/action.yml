@@ -38,13 +38,15 @@ runs:
       shell: bash
       run: |
         SYFT_VERSION="${{ inputs.syft-version }}"
-        if command -v syft &> /dev/null && syft version | grep -q "$SYFT_VERSION"; then
+        # Add install dir to PATH for subsequent steps (needed on Windows)
+        echo "/usr/local/bin" >> "$GITHUB_PATH"
+        if command -v syft &> /dev/null && syft version 2>/dev/null | grep -q "$SYFT_VERSION"; then
           echo "Syft $SYFT_VERSION already installed."
         else
           echo "Installing Syft $SYFT_VERSION..."
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin "v$SYFT_VERSION"
         fi
-        echo "Syft version: $(syft version)"
+        echo "Syft version: $(/usr/local/bin/syft version 2>/dev/null || echo 'installed')"
 
     - name: Generate SBOM
       shell: bash

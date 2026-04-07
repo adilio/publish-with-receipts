@@ -140,8 +140,9 @@ runs:
               continue
             }
 
-            $ns = @{ nuget = 'http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd' }
-            $deps = $xml.SelectNodes('//dependency') + $xml.SelectNodes('//nuget:dependency', $ns)
+            $nsmgr = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+            $nsmgr.AddNamespace('nuget', 'http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd')
+            $deps = $xml.SelectNodes('//dependency') + $xml.SelectNodes('//nuget:dependency', $nsmgr)
 
             foreach ($dep in $deps) {
               if (-not $dep) { continue }
