@@ -162,9 +162,9 @@ rules:
       - pattern: |
           $... = 'http://internal-...'
       - pattern: |
-          $... = "\\\\corp...."
+          $... = "\\corp..."
       - pattern: |
-          $... = '\\corp....'
+          $... = '\\corp...'
       - pattern: |
           UpdateServer = "https://internal-..."
       - pattern: |
@@ -267,6 +267,10 @@ rules:
   # ---------------------------------------------------------------------------
   - id: choco-service-install-no-cleanup
     pattern-either:
+      - pattern: |
+          New-Service -Name "..." ...
+      - pattern: |
+          New-Service -Name '...' ...
       - pattern: |
           New-Service -Name $... ...
       - pattern: |

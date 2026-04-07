@@ -184,10 +184,11 @@ rules:
   # cross-platform PowerShell; included as a low-severity informational rule.
   # ---------------------------------------------------------------------------
   - id: powershell-webrequest-basic-parsing
-    pattern: |
-      Invoke-WebRequest -Uri ...
-    pattern-not: |
-      Invoke-WebRequest -Uri ... -UseBasicParsing
+    patterns:
+      - pattern: |
+          Invoke-WebRequest -Uri ...
+      - pattern-not: |
+          Invoke-WebRequest -Uri ... -UseBasicParsing
     message: |
       Consider adding -UseBasicParsing to Invoke-WebRequest calls for
       cross-platform compatibility and to avoid IE first-run errors in

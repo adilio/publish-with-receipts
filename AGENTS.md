@@ -1,13 +1,14 @@
 # Summit 2026 Marp Theme (AGENTS Guide)
 
-This repository contains the **Summit 2026** custom Marp theme (`summit-2026.css`) for building consistent, branded slide decks (HTML, PDF, PPTX) for the PowerShell + DevOps Global Summit 2026.
+This repository contains the **Summit 2026** custom Marp theme (`talk/summit-2026.css`) for building consistent, branded slide decks (HTML, PDF, PPTX) for the PowerShell + DevOps Global Summit 2026.
 
 Theme source: https://github.com/HeyItsGilbert/PSSummit2026
 
 ## Quick Start
 
 - Install the Marp for VS Code extension OR `npm i -g @marp-team/marp-cli`.
-- Place `summit-2026.css` in your project root (already here).
+- In this repo, the theme lives at `talk/summit-2026.css`.
+- If you want to reuse it in another project, copy that file into your project root.
 - Add front‑matter to your Markdown deck:
 
 ```yaml
@@ -38,11 +39,11 @@ Add this to your VS Code `settings.json` (User or Workspace):
 
 ```json
 "marp.themes": [
-  "./summit-2026.css"
+  "./talk/summit-2026.css"
 ]
 ```
 
-Then open a Markdown file with the front‑matter shown above. Use the Marp preview ("Open Preview to the Side") and export via the command palette: `Marp: Export Slide Deck...` selecting HTML / PDF / PPTX.
+Then open `talk/presentation.md` or another Markdown deck with the front‑matter shown above. Use the Marp preview ("Open Preview to the Side") and export via the command palette: `Marp: Export Slide Deck...` selecting HTML / PDF / PPTX.
 
 ## Using marp-cli (PowerShell examples)
 
@@ -50,13 +51,13 @@ From the repo root (ensure the CLI is installed globally):
 
 ```powershell
 # HTML
-marp .\presentation.md --theme-set .\summit-2026.css --html --output .\presentation.html
+marp .\talk\presentation.md --theme-set .\talk\summit-2026.css --html --output .\talk\presentation.html
 
 # PDF (needs Chromium; add --allow-local-files for images)
-marp .\presentation.md --theme-set .\summit-2026.css --pdf --allow-local-files --output .\presentation.pdf
+marp .\talk\presentation.md --theme-set .\talk\summit-2026.css --pdf --allow-local-files --output .\talk\presentation.pdf
 
 # PPTX
-marp .\presentation.md --theme-set .\summit-2026.css --pptx --allow-local-files --output .\presentation.pptx
+marp .\talk\presentation.md --theme-set .\talk\summit-2026.css --pptx --allow-local-files --output .\talk\presentation.pptx
 ```
 
 Key flags:
@@ -121,7 +122,7 @@ The theme imports Google Fonts (`Play`, `Space Grotesk`). If offline, those fall
 
 ## Images & Background
 
-The theme references `Background.jpg` for the default slide background. Provide your own file or remove/change that line in `summit-2026.css` if not desired. You can disable the background per slide with the `no_background` class.
+The theme references `Background.jpg` for the default slide background. Provide your own file or remove/change that line in `talk/summit-2026.css` if not desired. You can disable the background per slide with the `no_background` class.
 
 ## Accessibility & Readability Tips
 
@@ -144,8 +145,8 @@ The theme references `Background.jpg` for the default slide background. Provide 
 Example PowerShell script snippet to export all decks:
 
 ```powershell
-Get-ChildItem -Filter *.md | ForEach-Object {
-  marp $_.FullName --theme-set .\summit-2026.css --allow-local-files --pptx --output ("$($_.BaseName).pptx")
+Get-ChildItem -Path .\talk -Filter *.md | ForEach-Object {
+  marp $_.FullName --theme-set .\talk\summit-2026.css --allow-local-files --pptx --output (Join-Path $_.DirectoryName "$($_.BaseName).pptx")
 }
 ```
 
@@ -153,7 +154,7 @@ Modify output flags (`--pdf`, `--html`) as needed.
 
 ## Contributing Improvements
 
-Open a PR adjusting `summit-2026.css` and include before/after screenshots (HTML export) plus a rationale (accessibility, consistency, performance). Keep selectors additive; avoid breaking existing class names to prevent slide drift.
+Open a PR adjusting `talk/summit-2026.css` and include before/after screenshots (HTML export) plus a rationale (accessibility, consistency, performance). Keep selectors additive; avoid breaking existing class names to prevent slide drift.
 
 ## References
 
