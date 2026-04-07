@@ -54,8 +54,8 @@ function ConvertTo-Sarif {
                                 physicalLocation = @{
                                     artifactLocation = $artifactLocation
                                     region           = @{
-                                        startLine   = $_.Line
-                                        startColumn = $_.Column
+                                        startLine   = [Math]::Max(1, [int]$_.Line)
+                                        startColumn = [Math]::Max(1, [int]$_.Column)
                                     }
                                 }
                             }

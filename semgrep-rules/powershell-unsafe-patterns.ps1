@@ -1,8 +1,8 @@
 # Semgrep test fixtures for powershell-unsafe-patterns.yml
 #
 # This file is used by `semgrep --test semgrep-rules/` to validate that each
-# rule matches what it should (# ruleid: RULE_ID) and does not match what it
-# should not (# ok: RULE_ID).
+# rule matches what it should (ruleid: RULE_ID) and does not match what it
+# should not (ok: RULE_ID).
 #
 # Reference: https://semgrep.dev/docs/writing-rules/testing-rules/
 #
