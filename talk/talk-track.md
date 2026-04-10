@@ -44,7 +44,7 @@ We've got 90 minutes. There's a live demo in Sections 2 and 3. If the demo gods 
 
 *Most hands will go down.*
 
-"That gap — between 'the tests passed' and 'I know what's actually in this package and what I checked' — that's what we're closing today.
+"Good. That gap, between 'the tests passed' and 'I know what's actually in this package and what I checked,' is what we're closing today.
 
 And if you've never seen an SBOM generated from your own package: by the end of this talk, you'll have a pipeline that produces one on every push."
 
@@ -154,7 +154,11 @@ Semgrep with custom rules catches this at build time. We'll walk through the spe
 
 It's also completely unenforced. VERIFICATION.txt is a human-readable text file. There's no tooling that checks whether the checksums in it are correct, whether the file is present at all, or whether it was updated when the binary changed.
 
-Chocolatey packages run as admin by default. If the binary is compromised — whether at the source, in transit, or because someone swapped it out — it executes with full system access.
+Here's what this looks like in practice — and this is not a malicious scenario, just normal maintenance drift. A maintainer ships v1.0. The binary comes from the vendor's official CDN and the checksum is documented in VERIFICATION.txt. Six months later, the vendor rotates their CDN and the URL now points to v1.2. The maintainer updates the package version and the download URL but forgets to update the checksum. Nothing in the pipeline catches it. `choco pack` succeeds. The package installs successfully on every machine that updates. The binary running on those machines is different from the one documented in the file, and nobody knows.
+
+The malicious version of that same scenario is the 3CX supply chain attack in 2023. Attackers compromised 3CX's build environment. The signed Windows installer the vendor distributed was already backdoored before anyone packaged it for distribution. Companies pointing their packages at 3CX's official download URL were serving malware. If your pipeline doesn't verify the hash of what it downloaded against something you established at build time, you have no way to detect that the binary changed.
+
+Chocolatey packages run as admin by default. If the binary is compromised — whether at the source, in transit, or because someone updated it without telling you — it executes with full system access.
 
 The pipeline defense is automated checksum verification and SBOM generation for embedded binaries. If you can't prove what binary is in the package and where it came from, the pipeline surfaces that."
 
@@ -166,9 +170,13 @@ The pipeline defense is automated checksum verification and SBOM generation for 
 
 The problem is under-review. Community repo moderation includes human review of install scripts, which catches a lot. Internal repos typically have no review at all.
 
-The example on screen — a PATH modification — is a real pattern from internal packages. The PATH gets modified. There's no corresponding cleanup in `chocolateyUninstall.ps1`. Six months later, someone uninstalls the package and the PATH entry stays. Nobody knows why things are slightly broken.
+The example on screen is a PATH modification. Let me walk through what actually happens after that. The script adds `C:\tools\myapp` to the machine PATH. There's no corresponding cleanup in `chocolateyUninstall.ps1`. Six months later, someone uninstalls the package. The PATH entry stays, because nothing removed it. Now you have a PATH entry pointing at a directory that either no longer exists or is still present but unmanaged.
 
-The Semgrep rules in this repo flag: registry writes, service creation, PATH modification, and any of these without corresponding documentation or uninstall cleanup. Not every finding is a security issue, but in a context where the script runs as admin, the bar for 'this is fine' should be higher than usual."
+On a shared machine or a build server, that second case is worse than it sounds. If that directory is writable by non-admin users — and a lot of tools directories under `C:\` are, depending on how the app was installed — anyone with local access can drop a binary there named after a common tool. `git.exe`. `python.exe`. `node.exe`. Windows PATH resolution finds that binary before the real one. The next person who runs `git` on that machine runs whatever was planted instead. That's not theoretical. It's a well-documented local privilege escalation path, and a misconfigured PATH entry from a forgotten Chocolatey package is a common way the precondition gets set up.
+
+The Semgrep rules in this repo flag: registry writes, service creation, PATH modification, and any of these without corresponding documentation or uninstall cleanup. Not every finding is a security issue, but in a context where the script runs as admin, the bar for 'this is fine' should be higher than usual.
+
+That's the threat model. Six vectors, all real, all detectable with the right tooling. The question is whether your pipeline catches them before the package ships. Let's build one that does."
 
 ---
 
@@ -188,83 +196,121 @@ I'm going to walk through the example module in the repo, then show each step of
 
 *Walk through the files in the browser while talking.*
 
-"The example module is intentionally flawed. Not cartoonishly broken — the kind of thing that ships when you're moving fast.
+"The example module is intentionally flawed. Not cartoonishly broken. The kind of thing that ships when you're moving fast, or when you're the only person maintaining it, which tends to be the same situation.
 
 `ExampleModule.psd1` — the manifest. It has a floating dependency in `RequiredModules` and uses `ScriptsToProcess`, which is the same mechanism Aqua used in their typosquatting proof of concept.
 
 `Invoke-UnsafeFunction.ps1` — an exported function with two issues: a download-and-execute pattern, and a hardcoded API key in a variable. This is real code that would pass a Pester test.
 
-And here's the important thing: `ExampleModule.Tests.ps1` — the tests pass. The module loads. The functions export correctly. Traditional CI says green. The supply chain issues are completely invisible to Pester."
+And here's the important thing: `ExampleModule.Tests.ps1` — the tests pass. The module loads. The functions export correctly. Traditional CI says green. The supply chain issues are completely invisible to Pester.
+
+When I first pushed this module to a test repo, GitHub showed a green checkmark. What I'm going to show you now is what the supply chain pipeline sees that Pester doesn't."
 
 ---
 
 ## Slide 16 — Step 1: PSScriptAnalyzer
 
-*Switch to the Actions workflow or show SARIF results in a PR.*
+*Switch to the PR. Navigate to the Files Changed tab.*
 
-"Step one is PSScriptAnalyzer. Static analysis for PowerShell. It flags code quality issues, unsafe patterns, and best practice violations.
+"Before I explain the configuration, let me show you what the output looks like from the reviewer's side.
 
-In this pipeline it's configured to catch `Invoke-Expression` usage, missing `[CmdletBinding()]`, and `Write-Host`. Output is SARIF, which uploads to GitHub Code Scanning and surfaces directly as annotations in the PR diff.
+[Point to an inline annotation in the diff.]
 
-But — and this is important — PSScriptAnalyzer wasn't designed for supply chain security. It'll catch `Invoke-Expression` as a best practice issue, but it won't catch a hardcoded API key, and it won't catch a download-and-execute pattern that uses approved cmdlets. It's the right tool for code quality. It's not the right tool for the patterns we care about most. That's Semgrep."
+Right there in the code review. Not in a separate security dashboard, not an email to whoever you designated as your security person. An annotation on the specific line, with the rule name, the severity, and a description. Your reviewer sees this without leaving the PR.
+
+[Switch to the Security tab, then Code Scanning.]
+
+And here's where the findings aggregate. Everything from PSScriptAnalyzer, everything from Semgrep — in the same view, filterable by tool, severity, or state. This is the GitHub-native tier from Section 4's adoption path: zero cost, zero additional infrastructure. You upload a SARIF file at the end of the workflow step, and GitHub handles the rest.
+
+Now, what PSScriptAnalyzer is actually doing here: static analysis for code quality and best practice violations. It flags `Invoke-Expression`, missing `[CmdletBinding()]`, and `Write-Host`. That's the right scope for what it is.
+
+What it doesn't do is understand supply chain patterns. It sees `Invoke-Expression` and says 'this is a code quality warning.' It doesn't know that the expression being evaluated was just fetched from a remote URL. It doesn't know that variable in the previous line is holding content from an arbitrary CDN. That distinction matters, and that's what Semgrep is for."
 
 ---
 
 ## Slide 17 — Step 2: Semgrep — Custom Rules
 
-"Off-the-shelf Semgrep has poor PowerShell support. The rules in this repo are custom, written specifically for the patterns that show up in PowerShell modules and Chocolatey packages.
+*Stay in the Code Scanning view. Filter to Semgrep findings.*
 
-Four categories in `powershell-unsafe-patterns.yml`: download-and-execute patterns, hardcoded secrets, TLS certificate validation bypass, and base64-encoded command execution.
+"[Filter to the Semgrep tool in the Code Scanning dropdown.]
 
-Output is SARIF, same as PSScriptAnalyzer. Findings appear in the PR alongside the PSScriptAnalyzer findings. Consumers of the pipeline don't need to know which tool caught what — they just see the annotation in the diff."
+These are the Semgrep findings. Same interface — annotations in the PR diff, aggregated here — but different patterns.
+
+[Point to the download-and-execute finding.]
+
+That one is the Invoke-WebRequest feeding into Invoke-Expression. PSScriptAnalyzer flagged the Invoke-Expression on its own, as a code quality issue. Semgrep understands the data flow: the content came from a URL, was assigned to a variable, and is being passed to an expression evaluator. That's a different finding. That's 'you are executing untrusted remote content at runtime.'
+
+[Point to the hardcoded API key finding if visible.]
+
+And that one is the API key from `Invoke-UnsafeFunction.ps1`. Pattern match on the string shape. PSScriptAnalyzer doesn't have a rule for this. Semgrep does, because we wrote one.
+
+The rules live in `semgrep-rules/powershell-unsafe-patterns.yml` in the repo. Four categories: download-and-execute, hardcoded secrets, TLS certificate validation bypass, and base64-encoded command execution. The off-the-shelf Semgrep registry has poor PowerShell support, so these are custom. Fork them, extend them for your patterns, send a PR if you've got something worth adding."
 
 ---
 
 ## Slide 18 — Semgrep Rule Example
 
-*Show the rule structure.*
+*Navigate to the `semgrep-rules/` directory in the repo browser. Open `powershell-unsafe-patterns.yml`.*
 
-"Here's what a rule looks like. This one catches `Invoke-WebRequest` results being passed to `Invoke-Expression` — the classic download-and-execute chain.
+"[Open the rule file in the browser and scroll to the invoke-expression-from-web rule.]
 
-The pattern is the important part. Semgrep matches on the structure of the code, not just text. It handles variable assignments between the fetch and the execute.
+Here's the rule. YAML structure, readable without a Semgrep background.
 
-When this fires on a legitimate use case — and it will, sometimes — you add an inline suppression comment with a justification. The suppression shows up in the SARIF output and in PR annotations, so it's visible. You're not hiding it. You're documenting that you reviewed it and it's intentional."
+The `patterns` block is a list of clauses that all have to match. The metavariable `$X` matches any identifier, so this catches it whether you wrote `$content`, `$result`, `$response`, or anything else. Semgrep handles intermediate variable assignments — you don't have to have a direct pipe from the web request to the expression. If there's an assignment and then a reference, it still matches.
+
+The `message` field is what shows up in the SARIF output and the Code Scanning annotation. The `severity` controls whether it's a warning or a build-blocking error, depending on how you've configured the workflow threshold.
+
+When this fires on a legitimate use case — and it will, because there are real scenarios where fetching and evaluating remote content is intentional — you add a suppression comment above the line with a justification. The suppression shows up in the SARIF output. It's documented. You're not hiding the pattern, you're recording that you reviewed it and made a conscious call."
 
 ---
 
 ## Slide 19 — Step 3: SBOM with Syft
 
-"Step three: Syft generates a Software Bill of Materials for the module directory.
+*Switch to the workflow run. Navigate to the Artifacts section at the bottom of the run summary.*
 
-Format is CycloneDX JSON. That's the standard format supported by GitHub, Grype, and most SCA platforms. The SBOM captures declared dependencies, resolved versions, and file inventory.
+"[Click on the SBOM artifact to download it. Open it in a code editor or the browser.]
 
-The timing matters. This SBOM is generated at build time, from the specific state of the module at this commit. It's a snapshot. If a CVE drops tomorrow against one of these dependencies, you can check which builds are affected without re-running every scan. The SBOM is the answer to 'what was in the package on this date.'"
+This is the SBOM. CycloneDX JSON format. The metadata block at the top has the generation timestamp, the tool version, and the module it was generated from.
+
+[Scroll to the `components` array.]
+
+Each entry here is a component: package name, version, type, and a PURL — a Package URL, which is a standardized identifier for the package in its registry. For PowerShell dependencies, PURLs reference PSGallery. For anything from NuGet, they reference nuget.org.
+
+The version numbers are resolved versions. Not 'minimum 2.0.0' like the manifest says. The actual version that was installed and available at this commit, at this point in time. That's the snapshot, and that's what makes this useful.
+
+When a CVE drops tomorrow against a dependency, you don't have to rerun any scans. You search your stored SBOMs for the affected PURL and version. You know in seconds which releases are exposed, going back to the first time the pipeline ran.
+
+The timing of SBOM generation also matters. This runs at build time, before the package is published. It's not a scan of what's in the registry. It's a record of what was in the package when it left your pipeline."
 
 ---
 
 ## Slide 20 — Step 4: Vulnerability Scan with Grype
 
-"Grype takes the SBOM from the previous step and checks it against the NVD and GitHub Advisory Database.
+*Navigate back to the PR or to the Code Scanning view filtered to Grype.*
 
-Output is SARIF — findings in the PR — plus JSON for downstream ingestion. Severity thresholds are configurable. In this demo, medium severity surfaces as a warning. Critical fails the build.
+"[Point to a Grype finding in Code Scanning.]
 
-Grype only knows about published CVEs. It won't find a zero-day. But it catches the known stuff automatically at build time, and that's a baseline most teams don't have.
+Grype took the SBOM from the previous step and ran it against the NVD and GitHub Advisory Database. This finding has the CVE ID, the affected package, the installed version, the fixed version if one exists, and a link to the advisory.
 
-The SBOM plus Grype combination is especially valuable for retroactive checking. When a new CVE is published against a dependency, you can run Grype against the stored SBOM from six months ago and know immediately whether that release was affected — without rebuilding anything."
+The severity thresholds are configurable. In this pipeline, medium surfaces as a warning and critical fails the build. If you're adding this to an existing codebase for the first time, start with everything as warnings for a few weeks. You'll see what your packages look like, and there may be some surprises, without blocking any merges. Tune the thresholds when you have a sense of the baseline.
+
+The SBOM and Grype combination is especially valuable retroactively. A new CVE gets published today against a dependency you were using three months ago. You pull the stored SBOM from that release out of artifact storage, run Grype against it, and you know whether that release was affected — without rebuilding anything, without touching the current code. That's the case the pipeline is really designed for: not just catching things at build time, but answering questions about builds that already happened."
 
 ---
 
 ## Slide 21 — Step 5: Provenance
 
-*Point at the JSON block.*
+*Navigate to the provenance JSON artifact from the workflow run. Open it.*
 
-"The last step is provenance generation. This is the receipt.
+"[Pull up the provenance artifact in the editor or browser.]
 
-It records: the source repo, the commit SHA, the workflow reference, the build timestamp, and hashes of the output artifacts. It follows the SLSA in-toto format.
+The provenance document. This is the receipt that ties everything together.
 
-What this gives you is a chain of custody. The SBOM tells you what was in the package. The SARIF tells you what you checked. The provenance ties both of those back to a specific commit and a specific pipeline run. A consumer who receives this package can verify that it matches what the pipeline built, from what source, at what time.
+Source repo, commit SHA, workflow reference, build timestamp, artifact hash. Each one of those fields is a link in a chain. The source repo and commit SHA tell you exactly what code was compiled. The workflow reference tells you which pipeline ran and links back to the specific Actions run. The artifact hash is a SHA256 of the output artifact — the module package that went to the registry.
 
-For a solo maintainer, this might feel like overkill. For a team that's audited, or a team publishing modules that run in production Azure environments, this is the difference between 'we think it's fine' and 'here's the evidence.'"
+Here's how a consumer uses this. They receive the module. They hash the artifact they have, compare it to `artifact_hash`. If it matches, they know they have exactly what the pipeline produced. The commit SHA links to the repo, where the code is visible. The workflow reference links to the Actions run, where every step that ran is logged. You can trace the artifact all the way back to the specific line of code that produced it.
+
+For a solo maintainer, this might feel like more formality than the situation calls for. For a team that publishes modules running in production Azure environments, or a team that gets asked 'can you prove the thing you shipped matches what's in your repo,' this is the answer. It's the difference between 'we think it's fine' and 'here's the chain of evidence.'"
 
 ---
 
@@ -276,7 +322,7 @@ For a solo maintainer, this might feel like overkill. For a team that's audited,
 
 Each step is a composite action. You can adopt them one at a time. You don't have to run the whole pipeline to get value. Add PSScriptAnalyzer today, add Semgrep next month, add the SBOM when you're ready.
 
-Alright — let's talk about Chocolatey."
+That's the PowerShell pipeline. Now let's talk about why Chocolatey needs its own version, and why you can't just point the same workflow at a `.nuspec` and call it done."
 
 ---
 
@@ -284,23 +330,27 @@ Alright — let's talk about Chocolatey."
 
 *Section break.*
 
-"Chocolatey packages are not just PowerShell modules in a different wrapper. They have a different risk profile, and that difference is significant enough to warrant a separate pipeline with separate checks."
+"The PowerShell pipeline we just built is designed around a specific threat model: modules that run in the context of whoever invokes them. Your module runs with the permissions of the user who imports it. The risk is in the code you wrote and the dependencies you declared.
+
+Chocolatey is a categorically different situation. Install scripts run as admin. Not as the user who typed the command — elevated, because installing software systemwide requires it. And the thing the install script is deploying is typically a binary from an external URL, not code you wrote. The package is the delivery mechanism. The actual software comes from somewhere else.
+
+That combination — admin execution of externally sourced binaries — means the blast radius if something goes wrong is fundamentally higher than in the PowerShell case. The same pipeline principles apply. The specific checks have to be different. Let's build it."
 
 ---
 
 ## Slide 24 — What Makes Chocolatey Different
 
-"Four things set Chocolatey packages apart.
+"Four things set Chocolatey packages apart from PowerShell modules, and they compound each other.
 
-Elevated privilege by default. Install scripts run as admin. Full stop.
+Elevated privilege, by default. Install scripts run as admin. This isn't a configuration option you can work around — it's how the tool works. When you're reviewing a Chocolatey install script, you're reviewing code that will execute as SYSTEM on every machine that installs or updates this package. There is no 'runs with user privileges' fallback unless the package author explicitly coded for it, which most don't, because it's not the expected pattern.
 
-External binaries are the norm. A Chocolatey package is often just a thin wrapper around an EXE or MSI that gets downloaded at install time. The package itself might be tiny, but the binary it fetches could be anything.
+The package usually isn't the software. A Chocolatey package is typically a thin PowerShell wrapper around a binary that gets fetched at install time. The package itself might be three kilobytes of metadata and a short script. The binary it downloads might be a 50-megabyte EXE from a vendor CDN. That binary is what runs on the machine. Which means the security of the package is entirely dependent on the security of that external download — and the package author's control over that download is limited to the URL and the checksum they documented at package creation time.
 
-VERIFICATION.txt is convention, not enforcement. Chocolatey has a mechanism for documenting binary sources and checksums. Nobody checks whether it's correct programmatically. It's a text file.
+VERIFICATION.txt is documentation, not a contract. There's a well-established convention for recording binary sources and checksums. Nothing validates it programmatically. The checksum might be accurate, might have drifted when a maintainer updated the binary without updating the file, or might be missing entirely for older packages. The convention exists. The enforcement doesn't, unless you build it.
 
-Internal repos have zero moderation. The Chocolatey community repo has human review. Your internal repo probably doesn't. Which means every risk that community moderation catches, you're carrying yourself.
+Internal repos have no safety net. The Chocolatey community repo has human moderators who review install scripts before packages are approved. Your internal repo has whoever you assigned to do it, which is often nobody formal, or a process that has been 'we should really get to that' for longer than anyone's comfortable admitting.
 
-Everything from the PowerShell pipeline applies here — plus these additional checks."
+Everything from the PowerShell pipeline applies here. On top of that, Chocolatey packages need their own checks."
 
 ---
 
@@ -312,7 +362,7 @@ Everything from the PowerShell pipeline applies here — plus these additional c
 
 The nuspec has missing metadata and an unpinned dependency. The install script calls `Install-ChocolateyPackage` with a URL but no checksum, and it modifies PATH without documenting it. VERIFICATION.txt has no checksums and a vague source URL.
 
-Here's what makes this dangerous as a demo: `choco install` succeeds. The software installs. Everything looks fine. There's nothing in the standard output that tells you any of this happened. That's the problem."
+Here's what makes this dangerous as a demo: `choco install` succeeds. The software installs. Chocolatey prints 'The install was successful.' It always prints that. There's nothing in that output that tells you any of this happened, which is also what Chocolatey prints when everything actually is fine. That's the problem."
 
 ---
 
@@ -332,21 +382,29 @@ This is the typosquatting defense from Section 1, operationalized. It won't stop
 
 "Step two verifies that every external binary download has a checksum, that the checksum uses a strong algorithm — SHA256 or better, not MD5 — and that VERIFICATION.txt entries match the actual embedded files.
 
-The check parses `chocolateyInstall.ps1` to extract URLs and checksums from `Install-ChocolateyPackage` and similar helper calls. If a checksum is missing, it's an error. If the algorithm is weak, it's a warning. If the VERIFICATION.txt entry doesn't match the embedded file, it's an error.
+The check parses `chocolateyInstall.ps1` to extract URLs and checksums from `Install-ChocolateyPackage` and similar helper calls. Three possible findings: missing checksum is an error, weak algorithm is a warning, VERIFICATION.txt not matching the embedded file is an error.
 
-Chocolatey already requires checksums for non-secure downloads as of v0.10.0. This pipeline extends that enforcement to all downloads and embedded binaries, and it does it at build time. The difference: if this check fails at install time, the damage is already in progress. At build time, you catch it before anyone runs the script."
+The algorithm check matters more than it might seem. MD5 and SHA1 are deprecated for integrity checking because there are known collision attacks against both. An attacker who can influence the binary being served can potentially craft a replacement that produces the same MD5 hash. SHA256 doesn't have this problem in practice. If your package still uses MD5 for checksums, it's worth fixing independent of anything else we're talking about today.
+
+The VERIFICATION.txt match check closes a specific gap: a maintainer updates the binary URL for a new release, regenerates the package, but forgets to update VERIFICATION.txt. The package passes `choco pack` without errors. It installs successfully. But the checksum in VERIFICATION.txt now describes the previous binary, not the current one. Anyone checking it manually has inaccurate data.
+
+Chocolatey already requires checksums for non-secure downloads as of v0.10.0. This pipeline extends that enforcement to all downloads and embedded binaries and runs it at build time. The difference matters: if this check fails at install time, the software is already being downloaded onto the machine. At build time, you catch it before anyone runs the script."
 
 ---
 
 ## Slide 28 — Step 3: Install Script Analysis
 
-"Step three is Semgrep with Chocolatey-specific rules from `chocolatey-install-patterns.yml`.
+"Step three is Semgrep with Chocolatey-specific rules from `chocolatey-install-patterns.yml`. Let me go through the four categories specifically, because the risk profile here is different from the PowerShell rules.
 
-The rules catch four categories: unverified `Invoke-WebRequest` calls outside Chocolatey's built-in helpers, registry writes and service creation without documentation, hardcoded internal URLs or credentials, and PATH modification without corresponding uninstall cleanup.
+Raw `Invoke-WebRequest` calls outside Chocolatey's built-in helpers. When you use `Install-ChocolateyPackage`, Chocolatey's helper validates the checksum, handles retries, and logs the download to its audit trail. When you use `Invoke-WebRequest` directly — even if you've added your own checksum logic — you bypass all of that. The rule flags direct web calls so it's a conscious, documented choice when you make it.
 
-These rules are opinionated. Some findings are security issues. Some are maintainability concerns. But in a context where install scripts run as admin, the bar for 'this is fine' should be higher.
+Registry writes and service creation without documentation. An install script that creates a Windows service installs something that runs indefinitely with system privileges, long after the install script finishes. The rule flags `New-Service`, `Set-Service`, and `sc.exe` calls and checks for a corresponding documentation comment. Not every service creation is a problem — a lot of legitimate packages install services. But if there's no comment explaining what the service is, what it does, and how it gets cleaned up, the reviewer can't evaluate it. And in a context where the script runs as admin, 'I couldn't see anything obviously wrong' is not a sufficient review.
 
-When a finding is intentional, you suppress it with a justification comment — same as the PowerShell rules. The suppression is visible in the SARIF output."
+Hardcoded internal URLs and credentials. Internal Chocolatey packages sometimes hardcode URLs pointing to corporate infrastructure, like `https://artifacts.corp.internal/...`. If that package ever leaves the internal repo — gets copied somewhere, gets published by mistake — it exposes your internal topology to anyone who looks at the script. Credentials are worse: they end up in Chocolatey's verbose log output, which can be world-readable depending on how logging is configured on the machine.
+
+PATH modification without uninstall cleanup. We covered the attack vector in the threats section. The specific rule checks: if `SetEnvironmentVariable` with 'PATH' appears in `chocolateyInstall.ps1`, does a corresponding cleanup exist in `chocolateyUninstall.ps1`? If not, it's a finding. The rule doesn't know whether the directory is writable or whether an attacker would care about it. But it knows the cleanup is missing, and that's enough to surface for review.
+
+These rules are opinionated, and some findings will be intentional. Suppress with a justification comment — same as the PowerShell rules. The suppression is visible in SARIF."
 
 ---
 
@@ -356,7 +414,9 @@ When a finding is intentional, you suppress it with a justification comment — 
 
 For a Chocolatey package, Syft scans the full package directory including the `tools/` folder. Embedded binaries are included in the SBOM with file hashes even if Syft can't identify them by name. The SBOM captures the declared dependency chain from the nuspec, any embedded binaries, and their resolved versions.
 
-The provenance document for a Chocolatey package is especially valuable because the package is often a wrapper around an external binary. The provenance ties together: binary URL, binary hash, commit SHA, pipeline run, timestamp. That's the full chain from 'who published this' to 'what binary did it actually download.'"
+The provenance document for a Chocolatey package is especially valuable because the package is often a wrapper around an external binary. The provenance ties together: binary URL, binary hash, commit SHA, pipeline run, timestamp. That's the full chain from 'who published this' to 'what binary did it actually download.'
+
+With both pipelines built, the output formats are the same across both: SARIF, CycloneDX JSON, provenance JSON. That consistency is intentional. These formats are the standard inputs for every security platform that matters. Let's talk about where they go."
 
 ---
 
@@ -408,7 +468,7 @@ Add one composite action at a time. PSScriptAnalyzer and Semgrep today. SBOM gen
 
 Tune the rules. The Semgrep rules in this repo are a starting point. Every codebase has patterns that look suspicious to a generic scanner but are intentional in context. Suppress with justification, document why.
 
-Add enforcement when you're ready. The goal is visibility first, enforcement second. You decide what blocks a merge."
+Add enforcement when you're ready. Resist the urge to make everything blocking on day one — that's how pipelines get disabled and then quietly removed. The goal is visibility first, enforcement second. You decide what blocks a merge."
 
 ---
 
