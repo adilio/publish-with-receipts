@@ -56,6 +56,38 @@ Consumer Install
 
 ---
 
+## What the Registries Already Do
+
+| | Chocolatey CCR | PowerShell Gallery |
+|--|---|---|
+| Metadata | Validator: nuspec, checksums, script layout | Manifest: version, GUID, author, description |
+| Install test | Verifier: install/upgrade/uninstall (WS2019) | `Install-Module` run as a real consumer |
+| Malware | VirusTotal for packaged + downloaded files | Microsoft Defender across all module files |
+| Code analysis | — | PSScriptAnalyzer (error-level rules) |
+| Human review | Script/URL/checksum inspection per version | Terms of Use enforcement |
+
+*Both registries do real work. This pipeline complements them — it doesn't replace them.*
+
+---
+
+## What They Don't Do
+
+**Neither registry:**
+- Audits upstream vendor source code or proves binaries clean beyond AV
+- Tests across a broad OS, locale, or environment matrix
+- Generates an SBOM or provenance attestation
+- Monitors for URL or binary drift after a package is approved
+- Detects hardcoded secrets in scripts
+
+**Additionally:**
+- CCR's VERIFICATION.txt is convention — nothing enforces it programmatically
+- CCR moderation covers community packages; internal repos have none
+- PSGallery's PSScriptAnalyzer fires on error-level rules only — not supply chain patterns
+
+*Neither registry produces receipts. That's the gap this pipeline fills.*
+
+---
+
 ## The Thesis
 
 **Three questions you should answer before publishing:**
@@ -200,8 +232,8 @@ Install scripts run as admin. Registry, services, PATH — all under-reviewed in
 
 <div class="callout secondary">
 
-### What it won't catch
-Hardcoded secrets, download-and-execute via approved cmdlets — that's what Semgrep is for.
+### PSGallery already runs PSScriptAnalyzer at publish time
+Running it here catches issues before you push. Semgrep fills the gaps it can't see: hardcoded secrets, download-execute chains, and unsafe patterns that need context to detect.
 
 </div>
 

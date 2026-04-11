@@ -64,7 +64,39 @@ The question I want you to leave with is: what would it take to fill that gap? B
 
 ---
 
-## Slide 5 — The Thesis
+## Slide 5 — What the Registries Already Do
+
+"Before we get to threats and pipelines, let me set some context that'll make the rest of the talk land better.
+
+The registries you're already publishing to — Chocolatey Community Repository and PowerShell Gallery — aren't doing nothing. It's worth saying explicitly, because the talk makes more sense when you understand what you're building on top of, and because you'll be more credible with this audience if you've acknowledged what the registries actually do rather than implying they're ignoring the problem.
+
+CCR runs four automated services before a community package can be approved. The Validator checks your nuspec and scripts against a ruleset: metadata completeness, required checksums, proper script naming, no SCM artifacts in the package. The Verifier actually installs, upgrades, and uninstalls the package in a Windows Server 2019 reference environment. The Scanner submits everything to VirusTotal. And for non-trusted packages, a human moderator reviews the install scripts, checks the download URLs, and compares checksums to vendor binaries.
+
+PSGallery does its own version: manifest validation, an install test using Install-Module, Defender antivirus across all module files, and PSScriptAnalyzer run at error-level against your code.
+
+This is real infrastructure. The people maintaining these registries have thought hard about it. The reason I'm putting this slide before the threat model is that it makes the threat model more interesting — not 'here's what's wrong with the registries' but 'here's what's still possible even when the registries work exactly as designed.'"
+
+---
+
+## Slide 6 — What They Don't Do
+
+"Here's what they don't do. And this is the motivation for everything else in this talk.
+
+Neither registry audits upstream vendor source code. VirusTotal tells you whether antivirus engines flag a binary — it doesn't tell you whether the vendor's build environment was compromised before the binary was signed, as happened with 3CX. Neither registry generates an SBOM. There's no machine-readable inventory of what's in your package that you could query against future CVEs. Neither registry produces provenance — there's no cryptographic link between the artifact in the registry and the pipeline run that produced it.
+
+Neither registry monitors for drift. CCR's Verifier runs when you submit a package, not continuously. If a vendor CDN is compromised three months after your package was approved, the registry doesn't know. You don't know. The consumer installs it anyway.
+
+For Chocolatey specifically: VERIFICATION.txt is a convention, not a contract. Nothing in choco pack, nothing in the Validator, validates it programmatically. And none of CCR's automation applies to your internal repo. If you're running Chocolatey internally — which is common in enterprise environments — there are no automated services and no human moderators. You're the only line of defense.
+
+For PSGallery: the PSScriptAnalyzer scan fires on error-level rules. It's a code quality check. It doesn't understand supply chain patterns. It doesn't look for hardcoded secrets. It doesn't know that a download-and-execute chain is semantically different from a regular web request.
+
+The gap isn't that the registries are negligent. The gap is that even well-maintained registries can't produce the receipts. They can tell you the package installed successfully on one reference machine. They can't hand you a signed document that says: this artifact came from this commit, was built by this pipeline, contained these dependencies at these versions, and nothing changed between when we built it and when you're installing it.
+
+That's the gap. Let's look at the threats that live in it."
+
+---
+
+## Slide 7 — The Thesis
 
 "Here's the core idea. Before you publish a package, you should be able to answer three questions.
 
@@ -78,7 +110,7 @@ Together, these are your receipts. Not just a green checkmark. Actual evidence. 
 
 ---
 
-## Slide 6 — Section 1: The Problem Space
+## Slide 8 — Section 1: The Problem Space
 
 *Section break. Take a breath.*
 
@@ -86,7 +118,7 @@ Together, these are your receipts. Not just a green checkmark. Actual evidence. 
 
 ---
 
-## Slide 7 — Six Threats
+## Slide 9 — Six Threats
 
 *Read through the list.*
 
@@ -96,7 +128,7 @@ Each one has real incidents. Each one is detectable with the right pipeline. Let
 
 ---
 
-## Slide 8 — Threat 1: Typosquatting
+## Slide 10 — Threat 1: Typosquatting
 
 "PSGallery has no moniker rules. npm has explicit protections that prevent you from registering `reactnative` when `react-native` already exists. PSGallery has nothing equivalent.
 
@@ -108,7 +140,7 @@ The pipeline defense here is naming validation at build time. Before you publish
 
 ---
 
-## Slide 9 — Threat 2: Download-and-Execute
+## Slide 11 — Threat 2: Download-and-Execute
 
 *Gesture at the code.*
 
@@ -122,7 +154,7 @@ The detection is: pattern matching on download-execute chains, checksum enforcem
 
 ---
 
-## Slide 10 — Threat 3: Floating Dependencies
+## Slide 12 — Threat 3: Floating Dependencies
 
 *Point at the code block.*
 
@@ -136,7 +168,7 @@ The downstream risk is significant. In enterprise environments, PowerShell modul
 
 ---
 
-## Slide 11 — Threat 4: Secret Leakage
+## Slide 13 — Threat 4: Secret Leakage
 
 "These examples look cartoonish but they're based on real findings.
 
@@ -148,7 +180,7 @@ Semgrep with custom rules catches this at build time. We'll walk through the spe
 
 ---
 
-## Slide 12 — Threat 5: Unverified Binaries
+## Slide 14 — Threat 5: Unverified Binaries
 
 "Chocolatey has a convention called VERIFICATION.txt. The idea is that any package that embeds or downloads a binary should document its source URL and checksum in that file. It's a good convention.
 
@@ -164,7 +196,7 @@ The pipeline defense is automated checksum verification and SBOM generation for 
 
 ---
 
-## Slide 13 — Threat 6: Unsafe Install Patterns
+## Slide 15 — Threat 6: Unsafe Install Patterns
 
 "Install scripts are powerful. They run as admin. They can write to the registry, create services, modify PATH, download and execute additional content. This is by design — it's how Chocolatey works.
 
@@ -180,7 +212,7 @@ That's the threat model. Six vectors, all real, all detectable with the right to
 
 ---
 
-## Slide 14 — Section 2: PowerShell Module Pipeline
+## Slide 16 — Section 2: PowerShell Module Pipeline
 
 *Section break.*
 
@@ -192,7 +224,7 @@ I'm going to walk through the example module in the repo, then show each step of
 
 ---
 
-## Slide 15 — The Example Module
+## Slide 17 — The Example Module
 
 *Walk through the files in the browser while talking.*
 
@@ -208,7 +240,7 @@ When I first pushed this module to a test repo, GitHub showed a green checkmark.
 
 ---
 
-## Slide 16 — Step 1: PSScriptAnalyzer
+## Slide 18 — Step 1: PSScriptAnalyzer
 
 *Switch to the PR. Navigate to the Files Changed tab.*
 
@@ -224,11 +256,13 @@ And here's where the findings aggregate. Everything from PSScriptAnalyzer, every
 
 Now, what PSScriptAnalyzer is actually doing here: static analysis for code quality and best practice violations. It flags `Invoke-Expression`, missing `[CmdletBinding()]`, and `Write-Host`. That's the right scope for what it is.
 
-What it doesn't do is understand supply chain patterns. It sees `Invoke-Expression` and says 'this is a code quality warning.' It doesn't know that the expression being evaluated was just fetched from a remote URL. It doesn't know that variable in the previous line is holding content from an arbitrary CDN. That distinction matters, and that's what Semgrep is for."
+One thing worth noting — we covered this on the 'What the Registries Already Do' slide: PSGallery already runs PSScriptAnalyzer at publish time. So why are we running it here too? Two reasons. First, fail fast — catch this before you push, not after the package is already in the registry waiting for rejection. Second, and more importantly: PSScriptAnalyzer is not the star of the PowerShell pipeline. It's table stakes. It's what the registry already does. Running it here gets you the same finding earlier.
+
+The star is Semgrep. Because what PSScriptAnalyzer doesn't do is understand supply chain patterns. It sees `Invoke-Expression` and says 'this is a code quality warning.' It doesn't know that the expression being evaluated was just fetched from a remote URL. It doesn't know that the variable in the previous line is holding content from an arbitrary CDN. That distinction matters — and it's the distinction Semgrep is built to make."
 
 ---
 
-## Slide 17 — Step 2: Semgrep — Custom Rules
+## Slide 19 — Step 2: Semgrep — Custom Rules
 
 *Stay in the Code Scanning view. Filter to Semgrep findings.*
 
@@ -248,7 +282,7 @@ The rules live in `semgrep-rules/powershell-unsafe-patterns.yml` in the repo. Fo
 
 ---
 
-## Slide 18 — Semgrep Rule Example
+## Slide 20 — Semgrep Rule Example
 
 *Navigate to the `semgrep-rules/` directory in the repo browser. Open `powershell-unsafe-patterns.yml`.*
 
@@ -264,7 +298,7 @@ When this fires on a legitimate use case — and it will, because there are real
 
 ---
 
-## Slide 19 — Step 3: SBOM with Syft
+## Slide 21 — Step 3: SBOM with Syft
 
 *Switch to the workflow run. Navigate to the Artifacts section at the bottom of the run summary.*
 
@@ -284,7 +318,7 @@ The timing of SBOM generation also matters. This runs at build time, before the 
 
 ---
 
-## Slide 20 — Step 4: Vulnerability Scan with Grype
+## Slide 22 — Step 4: Vulnerability Scan with Grype
 
 *Navigate back to the PR or to the Code Scanning view filtered to Grype.*
 
@@ -298,7 +332,7 @@ The SBOM and Grype combination is especially valuable retroactively. A new CVE g
 
 ---
 
-## Slide 21 — Step 5: Provenance
+## Slide 23 — Step 5: Provenance
 
 *Navigate to the provenance JSON artifact from the workflow run. Open it.*
 
@@ -314,7 +348,7 @@ For a solo maintainer, this might feel like more formality than the situation ca
 
 ---
 
-## Slide 22 — PowerShell Pipeline — Full Picture
+## Slide 24 — PowerShell Pipeline — Full Picture
 
 *Let the diagram speak for a moment.*
 
@@ -326,7 +360,7 @@ That's the PowerShell pipeline. Now let's talk about why Chocolatey needs its ow
 
 ---
 
-## Slide 23 — Section 3: Chocolatey Package Pipeline
+## Slide 25 — Section 3: Chocolatey Package Pipeline
 
 *Section break.*
 
@@ -338,7 +372,7 @@ That combination — admin execution of externally sourced binaries — means th
 
 ---
 
-## Slide 24 — What Makes Chocolatey Different
+## Slide 26 — What Makes Chocolatey Different
 
 "Four things set Chocolatey packages apart from PowerShell modules, and they compound each other.
 
@@ -354,7 +388,7 @@ Everything from the PowerShell pipeline applies here. On top of that, Chocolatey
 
 ---
 
-## Slide 25 — The Example Package
+## Slide 27 — The Example Package
 
 *Walk through the files briefly in the browser.*
 
@@ -366,7 +400,7 @@ Here's what makes this dangerous as a demo: `choco install` succeeds. The softwa
 
 ---
 
-## Slide 26 — Step 1: Naming Validation
+## Slide 28 — Step 1: Naming Validation
 
 "Before anything else, we check the package name against the Chocolatey community repo.
 
@@ -376,7 +410,7 @@ This is the typosquatting defense from Section 1, operationalized. It won't stop
 
 ---
 
-## Slide 27 — Step 2: Checksum & Integrity Check
+## Slide 29 — Step 2: Checksum & Integrity Check
 
 *Show the code block.*
 
@@ -392,7 +426,7 @@ Chocolatey already requires checksums for non-secure downloads as of v0.10.0. Th
 
 ---
 
-## Slide 28 — Step 3: Install Script Analysis
+## Slide 30 — Step 3: Install Script Analysis
 
 "Step three is Semgrep with Chocolatey-specific rules from `chocolatey-install-patterns.yml`. Let me go through the four categories specifically, because the risk profile here is different from the PowerShell rules.
 
@@ -408,7 +442,7 @@ These rules are opinionated, and some findings will be intentional. Suppress wit
 
 ---
 
-## Slide 29 — Steps 4–5: SBOM + Provenance
+## Slide 31 — Steps 4–5: SBOM + Provenance
 
 "Steps four and five are the same tools as the PowerShell pipeline — Syft, Grype, provenance generation — but the SBOM content is different.
 
@@ -420,7 +454,7 @@ With both pipelines built, the output formats are the same across both: SARIF, C
 
 ---
 
-## Slide 30 — Section 4: Connecting to the Bigger Picture
+## Slide 32 — Section 4: Connecting to the Bigger Picture
 
 *Section break.*
 
@@ -428,7 +462,7 @@ With both pipelines built, the output formats are the same across both: SARIF, C
 
 ---
 
-## Slide 31 — Three Integration Tiers
+## Slide 33 — Three Integration Tiers
 
 "The pipeline produces three types of artifacts: SBOMs, SARIF findings, and provenance. Those artifacts are useful on their own — we've seen that. But they also feed into larger platforms depending on what your team already uses.
 
@@ -442,7 +476,7 @@ Cloud security — Wiz, CSPM platforms generally. This is the runtime context la
 
 ---
 
-## Slide 32 — Runtime Context Changes Everything
+## Slide 34 — Runtime Context Changes Everything
 
 "Here's why the third tier matters.
 
@@ -456,7 +490,7 @@ For a solo maintainer, the GitHub-native tier is probably enough. For an enterpr
 
 ---
 
-## Slide 33 — Realistic Adoption Path
+## Slide 35 — Realistic Adoption Path
 
 "Don't try to adopt everything at once. Here's how I'd actually do this.
 
@@ -472,7 +506,7 @@ Add enforcement when you're ready. Resist the urge to make everything blocking o
 
 ---
 
-## Slide 34 — The Repo
+## Slide 36 — The Repo
 
 "Here's the repo. Everything you saw today is in it.
 
@@ -486,7 +520,7 @@ Add enforcement when you're ready. Resist the urge to make everything blocking o
 
 ---
 
-## Slide 35 — Toolchain — All Free, All Open Source
+## Slide 37 — Toolchain — All Free, All Open Source
 
 "The full toolchain: PSScriptAnalyzer, Semgrep, Syft, Grype, SLSA. All free. All open source. No vendor licenses. No proprietary platforms required.
 
@@ -494,7 +528,7 @@ Everything runs on GitHub Actions public runners. If you've got a GitHub repo, y
 
 ---
 
-## Slide 36 — Provenance Before Publish
+## Slide 38 — Provenance Before Publish
 
 "Back to the thesis.
 
@@ -504,7 +538,7 @@ Not a green checkmark. Receipts."
 
 ---
 
-## Slide 37 — Questions?
+## Slide 39 — Questions?
 
 *Pause. Look up from the slides.*
 
@@ -542,8 +576,8 @@ Screenshots are in `demo-screenshots/` (local only, not in the repo). Walk throu
 
 | Section | Slides | Target time |
 |---------|--------|-------------|
-| Intro + Problem Space | 1–13 | 20–25 min |
-| PowerShell Pipeline | 14–22 | 20–25 min |
-| Chocolatey Pipeline | 23–29 | 20–25 min |
-| Bigger Picture + Close | 30–37 | 10–15 min |
+| Intro + Problem Space | 1–15 | 20–25 min |
+| PowerShell Pipeline | 16–24 | 20–25 min |
+| Chocolatey Pipeline | 25–31 | 20–25 min |
+| Bigger Picture + Close | 32–39 | 10–15 min |
 | Q&A | — | ~10 min |
