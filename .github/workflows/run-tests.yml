@@ -33,7 +33,7 @@ jobs:
   # to verify cross-platform compatibility of action scripts.
   # ---------------------------------------------------------------------------
   unit-tests:
-    name: Unit Tests (${{ matrix.ps-label }})
+    name: Unit Tests (${{ matrix.ps_label }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -41,10 +41,10 @@ jobs:
         include:
           - os: ubuntu-latest
             shell: pwsh
-            ps-label: PowerShell 7
+            ps_label: PowerShell 7
           - os: windows-latest
             shell: powershell
-            ps-label: Windows PowerShell 5.1
+            ps_label: Windows PowerShell 5.1
 
     steps:
       - name: Checkout
@@ -115,7 +115,7 @@ jobs:
   # load and export correctly on both runtimes.
   # ---------------------------------------------------------------------------
   module-tests:
-    name: Module Functional Tests (${{ matrix.ps-label }})
+    name: Module Functional Tests (${{ matrix.ps_label }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -123,10 +123,10 @@ jobs:
         include:
           - os: ubuntu-latest
             shell: pwsh
-            ps-label: PowerShell 7
+            ps_label: PowerShell 7
           - os: windows-latest
             shell: powershell
-            ps-label: Windows PowerShell 5.1
+            ps_label: Windows PowerShell 5.1
 
     steps:
       - name: Checkout
