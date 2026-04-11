@@ -35,19 +35,27 @@ Gotta thank the sponsors!
 
 ## What We're Covering
 
-1. **The Problem Space** — Six threats already in your packages
-2. **PowerShell Pipeline** — PSScriptAnalyzer → Semgrep → SBOM → Provenance
-3. **Chocolatey Pipeline** — Same model, different risk profile
-4. **Bigger Picture** — GitHub-native to enterprise platforms
+<ol class="primary-list">
+<li><strong>The Problem Space</strong> — Six threats already in your packages</li>
+<li><strong>PowerShell Pipeline</strong> — PSScriptAnalyzer → Semgrep → SBOM → Provenance</li>
+<li><strong>Chocolatey Pipeline</strong> — Same model, different risk profile</li>
+<li><strong>Bigger Picture</strong> — GitHub-native to enterprise platforms</li>
+</ol>
+
+<p class="muted">We’ll keep the slides practical: threat model first, then the two pipelines, then how this scales.</p>
 
 ---
 
 ## This Talk Is For You If...
 
-- You maintain PowerShell modules on PSGallery
-- You maintain Chocolatey packages (community or internal)
-- Your CI says "passed" but you're not sure what that means
-- You've never seen an SBOM from your own package
+<ul class="checklist secondary-list">
+<li>You maintain PowerShell modules on PSGallery</li>
+<li>You maintain Chocolatey packages (community or internal)</li>
+<li>Your CI says "passed" but you're not sure what that means</li>
+<li>You've never seen an SBOM from your own package</li>
+</ul>
+
+<p class="muted">If any of that sounds familiar, the pipeline examples later in the deck should map pretty closely to your world.</p>
 
 ---
 
@@ -69,43 +77,77 @@ Consumer Install
 
 ## What the Registries Already Do
 
-| | Chocolatey CCR | PowerShell Gallery |
-|--|---|---|
-| Metadata | Validator: nuspec, checksums, script layout | Manifest: version, GUID, author, description |
-| Install test | Verifier: install/upgrade/uninstall (WS2019) | validation that includes installation testing |
-| Malware | VirusTotal for packaged + downloaded files | some antivirus scanning |
-| Code analysis | — | PSScriptAnalyzer (error-level rules) |
-| Human review | Script and download source inspection per version | Terms of Use enforcement |
+<div class="columns">
+<div>
 
-*Both registries do real work. This pipeline complements them — it doesn't replace them.*
+### Chocolatey CCR
+
+<ul class="primary-list">
+<li>Validator: nuspec, checksums, script layout</li>
+<li>Verifier: install, upgrade, uninstall</li>
+<li>VirusTotal plus human review for community packages</li>
+</ul>
+
+</div>
+<div>
+
+### PowerShell Gallery
+
+<ul class="secondary-list">
+<li>Manifest validation for version, GUID, author, description</li>
+<li>Installation testing in validation</li>
+<li>Antivirus scanning plus error-level PSScriptAnalyzer</li>
+</ul>
+
+</div>
+</div>
+
+<p class="muted">Both registries already do real work. This pipeline complements them — it doesn't replace them.</p>
 
 ---
 
 ## What They Don't Do
 
-**Neither registry:**
-- Audits upstream vendor source code or proves binaries clean beyond AV
-- Tests across a broad OS, locale, or environment matrix
-- Generates an SBOM or provenance attestation
-- Monitors for URL or binary drift after a package is approved
-- Detects hardcoded secrets in scripts
+<div class="columns">
+<div>
 
-**Additionally:**
-- CCR's VERIFICATION.txt is convention — nothing enforces it programmatically
-- CCR moderation covers community packages; internal repos have none
-- PSGallery's PSScriptAnalyzer fires on error-level rules only — not supply chain patterns
+### Technical gaps
 
-*Neither registry produces receipts. That's the gap this pipeline fills.*
+<ul class="quaternary-list">
+<li>Audits upstream vendor source code or proves binaries clean beyond AV</li>
+<li>Tests across a broad OS, locale, or environment matrix</li>
+<li>Generates an SBOM or provenance attestation</li>
+<li>Monitors for URL or binary drift after approval</li>
+<li>Detects hardcoded secrets in published scripts</li>
+</ul>
+
+</div>
+<div>
+
+### Process gaps
+
+<ul class="secondary-list">
+<li>CCR's VERIFICATION.txt is convention — nothing enforces it programmatically</li>
+<li>CCR moderation covers community packages; internal repos have none</li>
+<li>PSGallery's PSScriptAnalyzer fires on error-level rules only — not supply chain patterns</li>
+</ul>
+
+</div>
+</div>
+
+<p class="muted">Neither registry produces receipts. That's the gap this pipeline fills.</p>
 
 ---
 
 ## The Thesis
 
-**Three questions you should answer before publishing:**
+**<span class="gradient-text">Three questions</span> you should answer before publishing:**
 
-- What's in this package? → **SBOM**
-- What did we check? → **Scan results (SARIF)**
-- Can we prove when and how it was built? → **Provenance**
+<ul class="primary-list">
+<li>What's in this package? → <span class="primary-bg">SBOM</span></li>
+<li>What did we check? → <span class="secondary-bg">Scan results (SARIF)</span></li>
+<li>Can we prove when and how it was built? → <span class="quaternary-bg">Provenance</span></li>
+</ul>
 
 <div class="callout gradient">
 
@@ -125,11 +167,13 @@ Consumer Install
 
 ## Six Threats
 
-1. **Typosquatting** — Wrong package, silently installed
-2. **Download-and-Execute** — Install scripts fetch unknown binaries
-3. **Floating Dependencies** — Version resolved at install time
-4. **Secret Leakage** — API keys in published source
-5. **Unverified Binaries** — No checksum, no proof
+<ol class="quaternary-list">
+<li><strong>Typosquatting</strong> — Wrong package, silently installed</li>
+<li><strong>Download-and-Execute</strong> — Install scripts fetch unknown binaries</li>
+<li><strong>Floating Dependencies</strong> — Version resolved at install time</li>
+<li><strong>Secret Leakage</strong> — API keys in published source</li>
+<li><strong>Unverified Binaries</strong> — No checksum, no proof</li>
+</ol>
 
 Each one is detectable with the right pipeline.
 

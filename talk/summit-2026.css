@@ -251,23 +251,48 @@ img {
 .table,
 table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 0.62rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.7rem;
+  background: var(--surface);
+  border: 2px solid color-mix(in srgb, var(--tertiary-color) 28%, var(--border));
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
 }
 
 table th,
 table td {
-  padding: var(--spacing-table-cell) var(--spacing-xl);
-  border-bottom: 1px solid var(--border);
+  padding: var(--spacing-xs) var(--spacing-xl);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, var(--tertiary-color));
   text-align: left;
+  vertical-align: top;
+  background: var(--surface);
 }
 
 table thead th {
   text-transform: uppercase;
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   letter-spacing: 0.06em;
-  color: var(--muted);
-  border-bottom-color: color-mix(in srgb, var(--fg) 20%, var(--border));
+  color: white;
+  background: linear-gradient(135deg, var(--tertiary-color), var(--secondary-color));
+  border-bottom: 2px solid var(--quaternary-color);
+}
+
+table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--primary-color) 6%, white);
+}
+
+table tbody tr:hover {
+  background: color-mix(in srgb, var(--primary-color) 14%, white);
+}
+
+table tbody tr:hover td {
+  background: transparent;
 }
 
 /* Code — inline */
@@ -800,41 +825,93 @@ table tbody tr:hover {
 
 /* ---------- Big-statement section-break slides ---------- */
 section.big-statement {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  background-image: none;
-  background-color: var(--tertiary-color);
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(0, 174, 239, 0.24), transparent 28%),
+    radial-gradient(circle at 85% 80%, rgba(146, 39, 143, 0.28), transparent 26%),
+    linear-gradient(135deg, #141b33 0%, var(--tertiary-color) 52%, #101728 100%);
+}
+
+section.big-statement::before,
+section.big-statement::after {
+  content: "";
+  position: absolute;
+  inset: auto;
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+section.big-statement::before {
+  width: 20rem;
+  height: 20rem;
+  top: -8rem;
+  right: -6rem;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.12), transparent 62%);
+  filter: blur(2px);
+}
+
+section.big-statement::after {
+  width: 26rem;
+  height: 26rem;
+  left: -10rem;
+  bottom: -12rem;
+  background: radial-gradient(circle, rgba(0, 174, 239, 0.18), transparent 68%);
+  filter: blur(8px);
+}
+
+section.big-statement > * {
+  position: relative;
+  z-index: 1;
 }
 
 section.big-statement h1 {
-  background: var(--bg);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  font-weight: bold;
-  font-size: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-lg);
+  margin: 0;
+  padding: var(--spacing-sm) var(--spacing-4xl);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+  font-size: 0.72rem;
+  line-height: 1;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
 }
 
 section.big-statement h2 {
-  background: var(--quaternary-color);
+  max-width: 12ch;
+  margin-top: var(--spacing-4xl);
+  font-size: 2.15rem;
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  background: linear-gradient(135deg, #ffffff 0%, color-mix(in srgb, var(--primary-color) 82%, white) 55%, color-mix(in srgb, var(--quaternary-color) 82%, white) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
   font-weight: bold;
-  font-size: 1.5rem;
+  text-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
 }
 
 section.big-statement p {
-  color: var(--muted);
+  color: color-mix(in srgb, white 68%, var(--muted));
 }
 
 section.big-statement em {
-  color: var(--accent);
+  color: color-mix(in srgb, white 86%, var(--accent));
 }
 
 /* ---------- Print tweaks ---------- */
