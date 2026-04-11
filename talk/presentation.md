@@ -49,7 +49,7 @@ Build / CI Pipeline   ← YOU ARE HERE
     ↓
 [ THE GAP ]           ← Most maintainers have nothing here
     ↓
-Registry              ← Signing, moderation, virus scan
+Registry              ← Moderation, virus scan
     ↓
 Consumer Install
 ```
@@ -61,10 +61,10 @@ Consumer Install
 | | Chocolatey CCR | PowerShell Gallery |
 |--|---|---|
 | Metadata | Validator: nuspec, checksums, script layout | Manifest: version, GUID, author, description |
-| Install test | Verifier: install/upgrade/uninstall (WS2019) | `Install-Module` run as a real consumer |
-| Malware | VirusTotal for packaged + downloaded files | Microsoft Defender across all module files |
+| Install test | Verifier: install/upgrade/uninstall (WS2019) | validation that includes installation testing |
+| Malware | VirusTotal for packaged + downloaded files | some antivirus scanning |
 | Code analysis | — | PSScriptAnalyzer (error-level rules) |
-| Human review | Script/URL/checksum inspection per version | Terms of Use enforcement |
+| Human review | Script and download source inspection per version | Terms of Use enforcement |
 
 *Both registries do real work. This pipeline complements them — it doesn't replace them.*
 
@@ -120,7 +120,7 @@ Consumer Install
 4. **Secret Leakage** — API keys in published source
 5. **Unverified Binaries** — No checksum, no proof
 
-Each one has real incidents behind it.
+Each one is detectable with the right pipeline.
 
 ---
 
@@ -130,7 +130,10 @@ Each one has real incidents behind it.
 
 - Registered `Az.Table` to impersonate `AzTable` (10M+ downloads)
 - Callbacks from **production Azure environments within hours**
-- Reproduced after Microsoft said it was fixed
+- Microsoft claimed fixes twice — neither held up to verification
+- No evidence structural naming protections were ever implemented
+
+**Microsoft's structural fix:** Microsoft Artifact Registry (MAR) for official modules — vendor-controlled namespace. PSGallery stays for community packages. No naming protection there.
 
 **Pipeline defense:** Naming similarity validation at build time
 

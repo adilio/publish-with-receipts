@@ -16,6 +16,8 @@ Each section below maps to a slide in `presentation.md`. The talk track is a spe
 
 Most supply chain security content is aimed at containers, npm, PyPI, or enterprise SBOM mandates driven by executive orders. That's all valuable. But if you're in this room, you're probably working in the Windows automation world: PowerShell modules published to PSGallery, Chocolatey packages published to community or internal repos. And that world has its own supply chain, with its own risk profile.
 
+You've probably seen the headlines in the last six months. Shai-Hulud tearing through npm. LiteLLM backdoored on PyPI. Axios compromised via a stolen maintainer token. You skimmed them, maybe forwarded one to a coworker, and moved on — because none of that is your stack. And you were right to move on. But the pattern underneath every one of those incidents is the same: no pinned versions, no verified artifacts, no provenance. That pattern lives in your stack too. It just hasn't made the news yet.
+
 That's what we're here to talk about. The repo is up on screen. Everything you see today is in it. You can follow along, fork it, and run it yourself."
 
 ---
@@ -56,7 +58,7 @@ And if you've never seen an SBOM generated from your own package: by the end of 
 
 "Here's the problem space in one picture. You write code. You run CI. CI passes. The package goes to a registry. Consumers install it.
 
-Most security controls — signing, moderation, virus scanning — happen at the registry level. That matters. But it assumes the artifact arriving at the registry is already trustworthy.
+Most registry-level controls — moderation, virus scanning — happen at the registry level. That matters. But it assumes the artifact arriving at the registry is already trustworthy.
 
 The gap is right here, between your CI pipeline and the registry. For most individual package maintainers, this gap is empty. There's no SBOM, no vulnerability scan, no provenance attestation. There's a green checkmark that says the tests ran.
 
@@ -70,9 +72,9 @@ The question I want you to leave with is: what would it take to fill that gap? B
 
 The registries you're already publishing to — Chocolatey Community Repository and PowerShell Gallery — aren't doing nothing. It's worth saying explicitly, because the talk makes more sense when you understand what you're building on top of, and because you'll be more credible with this audience if you've acknowledged what the registries actually do rather than implying they're ignoring the problem.
 
-CCR runs four automated services before a community package can be approved. The Validator checks your nuspec and scripts against a ruleset: metadata completeness, required checksums, proper script naming, no SCM artifacts in the package. The Verifier actually installs, upgrades, and uninstalls the package in a Windows Server 2019 reference environment. The Scanner submits everything to VirusTotal. And for non-trusted packages, a human moderator reviews the install scripts, checks the download URLs, and compares checksums to vendor binaries.
+CCR runs four automated services before a community package can be approved. The Validator checks your nuspec and scripts against a ruleset: metadata completeness, required checksums, proper script naming, no SCM artifacts in the package. The Verifier actually installs, upgrades, and uninstalls the package in a Windows Server 2019 reference environment. The Scanner submits everything to VirusTotal. And for non-trusted packages, a human moderator reviews the install scripts and download sources.
 
-PSGallery does its own version: manifest validation, an install test using Install-Module, Defender antivirus across all module files, and PSScriptAnalyzer run at error-level against your code.
+PSGallery does its own version: manifest validation, validation that includes installation testing, some antivirus scanning, and PSScriptAnalyzer run at error-level against your code.
 
 This is real infrastructure. The people maintaining these registries have thought hard about it. The reason I'm putting this slide before the threat model is that it makes the threat model more interesting — not 'here's what's wrong with the registries' but 'here's what's still possible even when the registries work exactly as designed.'"
 
@@ -84,7 +86,7 @@ This is real infrastructure. The people maintaining these registries have though
 
 Neither registry audits upstream vendor source code. VirusTotal tells you whether antivirus engines flag a binary — it doesn't tell you whether the vendor's build environment was compromised before the binary was signed, as happened with 3CX. Neither registry generates an SBOM. There's no machine-readable inventory of what's in your package that you could query against future CVEs. Neither registry produces provenance — there's no cryptographic link between the artifact in the registry and the pipeline run that produced it.
 
-Neither registry monitors for drift. CCR's Verifier runs when you submit a package, not continuously. If a vendor CDN is compromised three months after your package was approved, the registry doesn't know. You don't know. The consumer installs it anyway.
+Neither registry monitors for drift. CCR's Verifier runs periodically, but it only checks whether the package still installs — not whether the binary being downloaded has changed or been compromised since the last run. If a vendor CDN is compromised three months after your package was approved, the registry doesn't know. You don't know. The consumer installs it anyway.
 
 For Chocolatey specifically: VERIFICATION.txt is a convention, not a contract. Nothing in choco pack, nothing in the Validator, validates it programmatically. And none of CCR's automation applies to your internal repo. If you're running Chocolatey internally — which is common in enterprise environments — there are no automated services and no human moderators. You're the only line of defense.
 
@@ -100,7 +102,7 @@ That's the gap. Let's look at the threats that live in it."
 
 "Here's the core idea. Before you publish a package, you should be able to answer three questions.
 
-What's in this package? That's your SBOM — a Software Bill of Materials. A machine-readable inventory of everything in the package and its dependencies at build time.
+What's in this package? That's your SBOM — a machine-readable inventory of your dependencies and their resolved versions at build time. For a pure PowerShell module, this is less about binary inventory and more about locking the dependency snapshot. The historical audit value is real but narrow: if your module ships compiled assemblies or NuGet dependencies, you can query past SBOMs when a CVE drops and know in seconds which releases were exposed. For pure PowerShell dependencies, that advisory database coverage doesn't exist yet. The Chocolatey side is where the SBOM story is strongest — those packages often embed or download actual binaries, and that's where the inventory argument is obvious.
 
 What did you check? That's your scan results — in SARIF format, which GitHub and most security platforms understand natively. PSScriptAnalyzer, Semgrep, Grype.
 
@@ -124,7 +126,7 @@ Together, these are your receipts. Not just a green checkmark. Actual evidence. 
 
 "Six threats. Typosquatting. Download-and-execute. Floating dependencies. Secret leakage. Unverified binaries. Unsafe install patterns.
 
-Each one has real incidents. Each one is detectable with the right pipeline. Let's go through them."
+Each one is detectable with the right pipeline. Let's go through them."
 
 ---
 
@@ -134,7 +136,9 @@ Each one has real incidents. Each one is detectable with the right pipeline. Let
 
 Aqua Nautilus demonstrated this in 2023. They registered `Az.Table` — with a dot — to impersonate the popular `AzTable` module, which has over 10 million downloads. Within hours, they received callbacks from real production Azure environments at real companies. Not test environments. Production.
 
-Microsoft acknowledged the issue in late 2022. As of the Aqua report in August 2023, the protections were still not fully implemented. They were able to reproduce the attack after Microsoft said it was fixed.
+Microsoft claimed fixes twice — neither held up to verification. Their public response acknowledged the report but declined to detail what changed. There's no evidence structural naming protections were ever implemented.
+
+At last year's PowerShell Summit, Michael Green and Sydney Smith walked through Microsoft's architectural response to exactly this problem. Their answer isn't moniker rules — it's moving official Microsoft modules to the Microsoft Artifact Registry, where only Microsoft can publish. That's a real structural fix for vendor content, and the tooling to use it shipped earlier this year. But PSGallery isn't going away — it stays as the home for community modules. Which means if you're in this room maintaining community packages, you're still on a registry with no name similarity protection. That's the gap this pipeline step addresses.
 
 The pipeline defense here is naming validation at build time. Before you publish a package, check whether a similar name already exists in the registry. We'll build this in Section 3 for Chocolatey."
 
