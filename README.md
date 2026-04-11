@@ -1,5 +1,9 @@
 # publish-with-receipts
 
+[![Test Suite](https://github.com/adilio/publish-with-receipts/actions/workflows/run-tests.yml/badge.svg)](https://github.com/adilio/publish-with-receipts/actions/workflows/run-tests.yml)
+[![PowerShell Supply Chain](https://github.com/adilio/publish-with-receipts/actions/workflows/powershell-supply-chain.yml/badge.svg)](https://github.com/adilio/publish-with-receipts/actions/workflows/powershell-supply-chain.yml)
+[![Chocolatey Supply Chain](https://github.com/adilio/publish-with-receipts/actions/workflows/chocolatey-supply-chain.yml/badge.svg)](https://github.com/adilio/publish-with-receipts/actions/workflows/chocolatey-supply-chain.yml)
+
 Supply chain guardrails for PowerShell modules and Chocolatey packages. Catch the problems before you publish, not after.
 
 This repo gives you reusable GitHub Actions that generate SBOMs, scan for vulnerabilities, detect risky script patterns, and produce provenance artifacts — all inside your existing CI pipeline. Everything here is free, open source, and ready to fork.
@@ -45,11 +49,9 @@ publish-with-receipts/
 │   ├── enterprise-integration.md   # Connecting outputs to SCA and cloud security platforms
 │   └── remediation-guide.md        # How to fix every finding type the pipeline surfaces
 │
-├── talk/                           # Slide deck, talk track, outline, Marp theme
+├── talk/                           # Slide deck, talk track, and Marp theme
 │   ├── presentation.md             # Main deck
 │   ├── talk-track.md               # Speaker notes
-│   ├── slides-and-talk-track.md    # Combined rehearsal doc
-│   ├── Outline.md                  # High-level session outline
 │   └── summit-2026.css             # Summit 2026 Marp theme
 │
 └── CONTRIBUTING.md                 # How to add rules, actions, and examples
@@ -127,12 +129,10 @@ See <docs/enterprise-integration.md> for details on how the pipeline-level outpu
 
 ## Presentation
 
-The slide deck and speaker materials now live under `talk/`:
+The slide deck and speaker materials live under `talk/`:
 
 - `talk/presentation.md`
 - `talk/talk-track.md`
-- `talk/slides-and-talk-track.md`
-- `talk/Outline.md`
 
 The deck uses the **Summit 2026 Marp theme** by [HeyItsGilbert](https://github.com/HeyItsGilbert/PSSummit2026), stored here as `talk/summit-2026.css`. See [AGENTS.md](AGENTS.md) for usage and export instructions.
 
