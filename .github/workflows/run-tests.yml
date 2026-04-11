@@ -27,36 +27,23 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Unit tests — no external tool dependencies
-  # Fast; runs on every push/PR.
-  # Matrix covers PowerShell 7 (pwsh on Linux) and Windows PowerShell 5.1
-  # to verify cross-platform compatibility of action scripts.
+  # Unit tests — PowerShell 7 (pwsh on Linux)
   # ---------------------------------------------------------------------------
   unit-tests:
-    name: Unit Tests (${{ matrix.ps_label }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            shell: pwsh
-            ps_label: PowerShell 7
-          - os: windows-latest
-            shell: powershell
-            ps_label: Windows PowerShell 5.1
+    name: Unit Tests (PowerShell 7)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install Pester
-        shell: ${{ matrix.shell }}
+        shell: pwsh
         run: |
           Install-Module Pester -RequiredVersion 5.7.1 -Force -SkipPublisherCheck -Scope CurrentUser
 
       - name: Run unit tests
-        shell: ${{ matrix.shell }}
+        shell: pwsh
         run: |
           ./tests/Run-Tests.ps1 -Scope unit -OutputFormat Detailed -JUnitOutput ./unit-test-results.xml
 
@@ -64,7 +51,39 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: unit-test-results-${{ matrix.os }}
+          name: unit-test-results-ps7
+          path: unit-test-results.xml
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Unit tests — Windows PowerShell 5.1
+  # shell: powershell targets WinPS 5.1 on windows-latest runners.
+  # shell: expressions are not supported in the shell: field, so this is a
+  # separate job rather than a matrix variant.
+  # ---------------------------------------------------------------------------
+  unit-tests-winps:
+    name: Unit Tests (Windows PowerShell 5.1)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Pester
+        shell: powershell
+        run: |
+          Install-Module Pester -RequiredVersion 5.7.1 -Force -SkipPublisherCheck -Scope CurrentUser
+
+      - name: Run unit tests
+        shell: powershell
+        run: |
+          ./tests/Run-Tests.ps1 -Scope unit -OutputFormat Detailed -JUnitOutput ./unit-test-results.xml
+
+      - name: Publish unit test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unit-test-results-winps51
           path: unit-test-results.xml
           retention-days: 30
 
@@ -109,37 +128,52 @@ jobs:
           retention-days: 30
 
   # ---------------------------------------------------------------------------
-  # Module functional tests — Pester tests for ExampleModule
+  # Module functional tests — PowerShell 7 (pwsh on Linux)
   # Requires Az.Accounts (installs during the step).
-  # Matrix covers PowerShell 7 and Windows PowerShell 5.1 — the module must
-  # load and export correctly on both runtimes.
   # ---------------------------------------------------------------------------
   module-tests:
-    name: Module Functional Tests (${{ matrix.ps_label }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            shell: pwsh
-            ps_label: PowerShell 7
-          - os: windows-latest
-            shell: powershell
-            ps_label: Windows PowerShell 5.1
+    name: Module Functional Tests (PowerShell 7)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install Pester and dependencies
-        shell: ${{ matrix.shell }}
+        shell: pwsh
         run: |
           Install-Module Pester       -RequiredVersion 5.7.1 -Force -SkipPublisherCheck -Scope CurrentUser
           Install-Module Az.Accounts  -Force -SkipPublisherCheck -Scope CurrentUser -AllowClobber
 
       - name: Run module functional tests
-        shell: ${{ matrix.shell }}
+        shell: pwsh
+        run: |
+          $result = Invoke-Pester -Path examples/powershell-module/tests -PassThru -Output Detailed
+          if ($result.FailedCount -gt 0) {
+            Write-Error "Module tests: $($result.FailedCount) test(s) failed."
+            exit 1
+          }
+
+  # ---------------------------------------------------------------------------
+  # Module functional tests — Windows PowerShell 5.1
+  # Verifies the example module loads and exports correctly on WinPS 5.1.
+  # ---------------------------------------------------------------------------
+  module-tests-winps:
+    name: Module Functional Tests (Windows PowerShell 5.1)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Pester and dependencies
+        shell: powershell
+        run: |
+          Install-Module Pester       -RequiredVersion 5.7.1 -Force -SkipPublisherCheck -Scope CurrentUser
+          Install-Module Az.Accounts  -Force -SkipPublisherCheck -Scope CurrentUser -AllowClobber
+
+      - name: Run module functional tests
+        shell: powershell
         run: |
           $result = Invoke-Pester -Path examples/powershell-module/tests -PassThru -Output Detailed
           if ($result.FailedCount -gt 0) {
@@ -190,7 +224,7 @@ jobs:
   # ---------------------------------------------------------------------------
   all-tests-pass:
     name: All Tests Passed
-    needs: [unit-tests, integration-tests, module-tests, e2e-tests]
+    needs: [unit-tests, unit-tests-winps, integration-tests, module-tests, module-tests-winps, e2e-tests]
     runs-on: ubuntu-latest
     if: always()
 
@@ -198,7 +232,11 @@ jobs:
       - name: Check all jobs passed
         run: |
           if [[ "${{ needs.unit-tests.result }}" != "success" ]]; then
-            echo "Unit tests failed"
+            echo "Unit tests (PS7) failed"
+            exit 1
+          fi
+          if [[ "${{ needs.unit-tests-winps.result }}" != "success" ]]; then
+            echo "Unit tests (WinPS 5.1) failed"
             exit 1
           fi
           if [[ "${{ needs.integration-tests.result }}" != "success" ]]; then
@@ -206,7 +244,11 @@ jobs:
             exit 1
           fi
           if [[ "${{ needs.module-tests.result }}" != "success" ]]; then
-            echo "Module tests failed"
+            echo "Module tests (PS7) failed"
+            exit 1
+          fi
+          if [[ "${{ needs.module-tests-winps.result }}" != "success" ]]; then
+            echo "Module tests (WinPS 5.1) failed"
             exit 1
           fi
           if [[ "${{ needs.e2e-tests.result }}" != "success" ]]; then
