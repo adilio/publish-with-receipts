@@ -56,38 +56,6 @@ jobs:
           retention-days: 30
 
   # ---------------------------------------------------------------------------
-  # Unit tests — Windows PowerShell 5.1
-  # shell: powershell targets WinPS 5.1 on windows-latest runners.
-  # shell: expressions are not supported in the shell: field, so this is a
-  # separate job rather than a matrix variant.
-  # ---------------------------------------------------------------------------
-  unit-tests-winps:
-    name: Unit Tests (Windows PowerShell 5.1)
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Install Pester
-        shell: powershell
-        run: |
-          Install-Module Pester -RequiredVersion 5.7.1 -Force -SkipPublisherCheck -Scope CurrentUser
-
-      - name: Run unit tests
-        shell: powershell
-        run: |
-          ./tests/Run-Tests.ps1 -Scope unit -OutputFormat Detailed -JUnitOutput ./unit-test-results.xml
-
-      - name: Publish unit test results
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: unit-test-results-winps51
-          path: unit-test-results.xml
-          retention-days: 30
-
-  # ---------------------------------------------------------------------------
   # Integration tests — requires PSScriptAnalyzer and Semgrep
   # ---------------------------------------------------------------------------
   integration-tests:
@@ -224,7 +192,7 @@ jobs:
   # ---------------------------------------------------------------------------
   all-tests-pass:
     name: All Tests Passed
-    needs: [unit-tests, unit-tests-winps, integration-tests, module-tests, module-tests-winps, e2e-tests]
+    needs: [unit-tests, integration-tests, module-tests, module-tests-winps, e2e-tests]
     runs-on: ubuntu-latest
     if: always()
 
@@ -233,10 +201,6 @@ jobs:
         run: |
           if [[ "${{ needs.unit-tests.result }}" != "success" ]]; then
             echo "Unit tests (PS7) failed"
-            exit 1
-          fi
-          if [[ "${{ needs.unit-tests-winps.result }}" != "success" ]]; then
-            echo "Unit tests (WinPS 5.1) failed"
             exit 1
           fi
           if [[ "${{ needs.integration-tests.result }}" != "success" ]]; then

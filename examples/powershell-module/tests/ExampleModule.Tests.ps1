@@ -10,7 +10,9 @@
 # having supply chain visibility.
 
 BeforeAll {
-    $ModulePath = Join-Path $PSScriptRoot '..' 'ExampleModule' 'ExampleModule.psd1'
+    # [System.IO.Path]::Combine supports multiple segments on both WinPS 5.1 and PS 7+.
+    # Join-Path with multiple child paths is PS 7+ only.
+    $ModulePath = [System.IO.Path]::Combine($PSScriptRoot, '..', 'ExampleModule', 'ExampleModule.psd1')
     Import-Module $ModulePath -Force
 }
 
@@ -21,7 +23,7 @@ AfterAll {
 Describe 'ExampleModule' {
     Context 'Module loading' {
         It 'imports without error' {
-            { Import-Module (Join-Path $PSScriptRoot '..' 'ExampleModule' 'ExampleModule.psd1') -Force } |
+            { Import-Module ([System.IO.Path]::Combine($PSScriptRoot, '..', 'ExampleModule', 'ExampleModule.psd1')) -Force } |
                 Should -Not -Throw
         }
 
