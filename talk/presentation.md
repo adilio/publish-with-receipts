@@ -22,6 +22,17 @@ footer: github.com/adilio/publish-with-receipts
 
 ---
 
+<!-- _class: sponsors -->
+<!-- _paginate: skip -->
+
+# Thanks!
+
+<!--
+Gotta thank the sponsors!
+-->
+
+---
+
 ## What We're Covering
 
 1. **The Problem Space** — Six threats already in your packages

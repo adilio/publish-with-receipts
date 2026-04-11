@@ -10,10 +10,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Play:wght@400;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
 
 /*
-  Marp / Marpit theme based on the PSSummit2026 template by HeyItsGilbert
-  https://github.com/HeyItsGilbert/PSSummit2026
-
-  Usage in Markdown front-matter:
+  Marp / Marpit theme inspired by the user's Summit 2026 PPTX template.
+  Usage in Markdown front‑matter:
 
   ---
   marp: true
@@ -110,7 +108,7 @@ section {
 }
 
 /* Fallback if background image fails to load on title slide */
-@supports not (background: var(--bg) url('Background.jpg')) {
+@supports not (background: var(--bg) url('Background.png') no-repeat center/cover) {
   section.title {
     background: var(--bg);
   }
@@ -172,8 +170,7 @@ strong {
 }
 
 em {
-  color: var(--accent);
-  font-style: normal;
+  color: var(--accent-2);
 }
 
 a {
@@ -273,8 +270,8 @@ table thead th {
   border-bottom-color: color-mix(in srgb, var(--fg) 20%, var(--border));
 }
 
-/* Code */
-code {
+/* Code — inline */
+:not(pre) > code {
   font-family: var(--font-mono);
   font-size: 0.58rem;
   background: var(--tertiary-color);
@@ -284,13 +281,65 @@ code {
   border: 1px solid var(--tertiary-color);
 }
 
+/* Code — blocks */
 pre code {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
   display: block;
   padding: var(--spacing-2xl) var(--spacing-3xl);
   border-radius: 12px;
   background: var(--tertiary-color);
+  color: #e0e0e0;
   border: 2px solid var(--tertiary-color);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Syntax highlighting — dark-friendly overrides */
+pre .hljs-keyword,
+pre .hljs-selector-tag,
+pre .hljs-built_in,
+pre .hljs-literal {
+  color: #569cd6;
+}
+
+pre .hljs-string,
+pre .hljs-template-variable {
+  color: #ce9178;
+}
+
+pre .hljs-title,
+pre .hljs-type,
+pre .hljs-tag {
+  color: #4ec9b0;
+}
+
+pre .hljs-name,
+pre .hljs-attribute {
+  color: #9cdcfe;
+}
+
+pre .hljs-variable,
+pre .hljs-params {
+  color: #9cdcfe;
+}
+
+pre .hljs-comment,
+pre .hljs-doctag {
+  color: #6a9955;
+  font-style: italic;
+}
+
+pre .hljs-number {
+  color: #b5cea8;
+}
+
+pre .hljs-symbol,
+pre .hljs-bullet {
+  color: #d4d4d4;
+}
+
+pre .hljs-meta {
+  color: #dcdcaa;
 }
 
 /* ---------- Header & Footer (use Marp header/footer directives) ---------- */
@@ -320,7 +369,7 @@ footer {
   font-size: 0.65rem;
 }
 
-/* Optional slot for right-aligned sponsor/logo in header */
+/* Optional slot for right‑aligned sponsor/logo in header */
 header img,
 footer img {
   height: 100%;
@@ -341,12 +390,51 @@ section::after {
 }
 
 /* ---------- Layout helpers ---------- */
+
+/* Two-column split layout */
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  align-items: start;
+  margin-top: 0.5rem;
+}
+
 /* Title slide — big title, name/handle, sponsor image slot */
-section.with-background {
-  background-image: url('Background.jpg');
-  background-position: center;
-  background-size: cover;
-  background-repeat: no-repeat;
+/*
+  Background layers (back to front):
+    1. Background.png  — full-bleed decorative background
+    2. cc-by-sa.png    — CC BY SA badge, bottom-left corner
+    3. powershell-summit-logo.png — summit logo, top-right corner
+*/
+section.background {
+  background-image:
+    url('powershell-summit-logo.png'),
+    url('cc-by-sa.png'),
+    url('Background.png');
+  background-position:
+    top 20px right 20px,
+    bottom 20px left 20px,
+    bottom;
+  background-size:
+    auto 56px,
+    auto 40px,
+    95%;
+  background-repeat: no-repeat, no-repeat, no-repeat;
+}
+
+/* Strips the background but keeps the cc-by-sa image and corner logo */
+section {
+  background-image:
+    url('powershell-summit-logo.png'),
+    url('cc-by-sa.png');
+  background-position:
+    top 20px right 20px,
+    bottom 20px left 20px;
+  background-size:
+    auto 56px,
+    auto 40px;
+  background-repeat: no-repeat, no-repeat;
 }
 
 section.centered {
@@ -355,16 +443,57 @@ section.centered {
   justify-content: center;
 }
 
+/* Sponsors slide — sponsor logos as a background layer behind the corner logos */
+section.sponsors {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  background-image:
+    url('powershell-summit-logo.png'),
+    url('cc-by-sa.png'),
+    url('PSHSummit26-Sponsors.png');
+  background-position:
+    top 20px right 20px,
+    bottom 20px left 20px,
+    center 55%;
+  background-size:
+    auto 56px,
+    auto 40px,
+    85% auto;
+  background-repeat: no-repeat, no-repeat, no-repeat;
+}
+
 section.title {
   display: grid;
   grid-template-rows: auto auto;
   align-content: center;
   justify-items: center;
   text-align: center;
-  background-image: url('Background.jpg');
-  background-position: center;
-  background-size: cover;
-  background-repeat: no-repeat;
+  background-image:
+    url('powershell-summit-logo.png'),
+    url('cc-by-sa.png'),
+    url('powershell-summit-logo-top-left.png'),
+    url('date.png'),
+    url('Background.png');
+  background-position:
+    top 20px right 20px,
+    bottom 20px left 20px,
+    top 40px left 40px,
+    bottom 40px center,
+    bottom;
+  background-size:
+    auto 56px,
+    auto 40px,
+    auto 56px,
+    auto 35px,
+    95%;
+  background-repeat:
+    no-repeat,
+    no-repeat,
+    no-repeat,
+    no-repeat,
+    no-repeat;
 }
 
 section.title h1 {
@@ -404,6 +533,7 @@ section.title .name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  background-color: var(--bg);
 }
 
 section.title .handle {
@@ -531,7 +661,7 @@ section.title>img.sponsor {
   background: var(--accent);
 }
 
-/* Lists with check-style bullets */
+/* Lists with check‑style bullets */
 .checklist li::marker {
   content: "✔  ";
   color: var(--accent);
@@ -701,6 +831,10 @@ section.big-statement h2 {
 
 section.big-statement p {
   color: var(--muted);
+}
+
+section.big-statement em {
+  color: var(--accent);
 }
 
 /* ---------- Print tweaks ---------- */
