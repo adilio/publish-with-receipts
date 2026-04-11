@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 # Local-only working files
 AGENTS.md
 PLAN.md
