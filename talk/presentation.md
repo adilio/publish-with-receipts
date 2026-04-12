@@ -2,8 +2,6 @@
 marp: true
 theme: summit-2026
 paginate: true
-header: Chocolatey Fest 2026
-footer: github.com/adilio/publish-with-receipts
 ---
 
 <!--
