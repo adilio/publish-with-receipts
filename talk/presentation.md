@@ -220,6 +220,9 @@ RequiredModules = @(
 
 - Different version resolved Monday vs. Tuesday — no code change
 - Chocolatey deps can trigger additional elevated install scripts
+- PowerShell has no native lockfile — the dependency graph is reconstructed at install time, not recorded at publish time
+
+<p class="muted">npm has package-lock.json. cargo has Cargo.lock. We'll come back to what that means for your SBOM.</p>
 
 ---
 
@@ -284,6 +287,14 @@ Install scripts run as admin. Registry, services, PATH — all under-reviewed in
 
 ## Step 1: PSScriptAnalyzer
 
+<!--
+Talk track: Acknowledge PSScriptAnalyzer upfront — don't wait for the question.
+"PSGallery already runs this at publish time. We run it here so findings land in your PR
+before you push. It's excellent at what it does — PowerShell code quality, cmdlet misuse,
+missing attributes. But notice the slide says 'code quality.' That's a different job than
+supply chain security. The next slide is where that distinction matters."
+-->
+
 - Static analysis for PowerShell code quality
 - Flags: `Invoke-Expression`, missing `[CmdletBinding()]`, `Write-Host`
 - Output: **SARIF** → GitHub Code Scanning → PR annotations
@@ -291,13 +302,62 @@ Install scripts run as admin. Registry, services, PATH — all under-reviewed in
 <div class="callout secondary">
 
 ### PSGallery already runs PSScriptAnalyzer at publish time
-Running it here catches issues before you push. Semgrep fills the gaps it can't see: hardcoded secrets, download-execute chains, and unsafe patterns that need context to detect.
+Running it here catches issues before you push. It's the right tool for PowerShell code quality — but code quality and supply chain security are different problems.
 
 </div>
 
 ---
 
+## Why Not Just PSScriptAnalyzer?
+
+<!--
+Talk track: Preempt the skeptic. "You might be thinking: PSScriptAnalyzer already knows
+PowerShell better than Semgrep ever will — why add another tool? Fair. But notice the
+column headers: linter vs. security scanner. Those are different jobs. PSScriptAnalyzer
+answers 'is this PowerShell well-written?' Supply chain security asks 'can I trust where
+this came from and what it will do?' A perfectly lint-clean script can still exfiltrate
+data, pull from a compromised URL, or have no provenance trail at all.
+
+The other reason: the mental model you're building here travels. When your org's security
+team or a customer vendor review asks about your package pipeline, they're not asking
+about lint rules — they're asking about SAST, SBOM, and provenance. That's the language
+this pipeline speaks."
+-->
+
+<div class="columns">
+<div>
+
+### PSScriptAnalyzer — linter
+- Code quality, style, cmdlet misuse
+- Deep PowerShell AST knowledge
+- Already runs at PSGallery publish time
+- Right tool for its job
+
+</div>
+<div>
+
+### Supply chain needs more
+- Multi-statement attack chains
+- Hardcoded secrets and tokens
+- Patterns that span package files
+- A language your security team speaks
+
+</div>
+</div>
+
+<p class="muted">A lint-clean script can still exfiltrate data, pull from a compromised URL, or ship with no provenance. These tools answer different questions.</p>
+
+---
+
 ## Step 2: Semgrep — Custom Rules
+
+<!--
+Talk track: "So Semgrep is doing the security-specific work — the patterns PSScriptAnalyzer
+isn't designed to catch. These four rule categories map directly back to the six threats
+from Section 1. Download-and-execute is Threat 2. Hardcoded tokens is Threat 4.
+The rule example on the next slide shows a multi-statement chain — exactly the kind of
+context PSScriptAnalyzer's per-rule model doesn't handle well."
+-->
 
 `semgrep-rules/powershell-unsafe-patterns.yml`
 
@@ -331,12 +391,19 @@ Add inline suppression with justification when legitimate.
 
 - Scans module directory
 - Output: **CycloneDX JSON**
-- Captures: declared dependencies, resolved versions, file inventory
+- Captures: declared dependencies, file inventory, file hashes
 
 <div class="callout primary">
 
 ### Why it matters
 When a CVE drops tomorrow, you know which builds are affected — without re-running scans.
+
+</div>
+
+<div class="callout secondary">
+
+### The lockfile gap
+Syft sees your module directory. `RequiredModules` install separately — their DLLs are invisible to this scan. Your SBOM records what you *shipped*, not what resolves on the consumer's machine. That's the unsolved problem in PowerShell supply chain security, and no tool in this pipeline fully closes it yet.
 
 </div>
 
