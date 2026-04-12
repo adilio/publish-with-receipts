@@ -4,202 +4,219 @@
 [![PowerShell Supply Chain](https://github.com/adilio/publish-with-receipts/actions/workflows/powershell-supply-chain.yml/badge.svg)](https://github.com/adilio/publish-with-receipts/actions/workflows/powershell-supply-chain.yml)
 [![Chocolatey Supply Chain](https://github.com/adilio/publish-with-receipts/actions/workflows/chocolatey-supply-chain.yml/badge.svg)](https://github.com/adilio/publish-with-receipts/actions/workflows/chocolatey-supply-chain.yml)
 
-Supply chain guardrails for PowerShell modules and Chocolatey packages. Catch the problems before you publish, not after.
+> Companion repo for **"Provenance Before Publish"** — a Chocolatey Fest session at PowerShell + DevOps Global Summit 2026 (Bellevue, WA, April 13–16).
 
-This repo gives you reusable GitHub Actions that generate SBOMs, scan for vulnerabilities, detect risky script patterns, and produce provenance artifacts — all inside your existing CI pipeline. Everything here is free, open source, and ready to fork.
+**The argument:** PowerShell and Chocolatey lack the enforcement plumbing every other major package ecosystem took for granted years ago. No lockfile. No moniker rules. `VERIFICATION.txt` is a norm, not a contract. Moderation doesn't scale to internal repositories. The registries aren't negligent — they can't issue receipts for work that happens before their layer.
 
-## Why This Exists
+This repo is the plumbing, shaped as composite GitHub Actions you can adopt one at a time. It generates three artifacts on every push so you can answer three questions about any package you publish:
 
-Most supply chain security tooling focuses on what happens at the registry: signing, verification, distribution. That matters. But it assumes the artifact being published is already trustworthy.
+| Question | Artifact | Tool |
+|---|---|---|
+| What's in this package? | SBOM (CycloneDX) | Syft |
+| What did you check? | Scan results (SARIF) | PSScriptAnalyzer + Semgrep + Grype |
+| Can you prove how it was built? | Provenance (SLSA-style) | GitHub Attestations |
 
-This project focuses on what happens *before* that point. The idea is simple: if you’re going to publish a package, you should be able to show receipts. What was in it. What you checked. What the tools found. Not just “it passed the build.”
+Not a green checkmark. Receipts.
 
-## What’s in the Repo
+## What's honest about the current state
+
+Producing receipts today runs ahead of consuming them. `Install-Module` doesn't verify a SLSA attestation. `choco install` doesn't either. The registries don't require one at upload. The maintainer-side audit value is real — if you ever need to prove the artifact in the registry came from a specific commit and pipeline run, you can. The consumer-side verification loop will close when the registries require signed provenance at upload and the clients verify at install. That's an ecosystem-level change this repo doesn't claim to drive; it only claims that producing the receipts now means your back catalog is ready the day someone starts reading them.
+
+Two other gaps the talk and repo name plainly:
+
+- **No PowerShell lockfile.** An SBOM records what you *shipped*, not what resolves on the consumer's machine. The closest current workaround is pinning `RequiredVersion` (exact) instead of `ModuleVersion` (floor) and enforcing it with `dependency-pin-check`. That's a maintainer-side commitment, not a consumer-side guarantee.
+- **Internal repos have no moderation.** The community repo has human reviewers; your internal Chocolatey repo typically has nobody. In that context this pipeline is not a complement to moderation — it *is* the moderation. Enforce accordingly.
+
+## Repo layout
 
 ```
 publish-with-receipts/
 ├── examples/
-│   ├── powershell-module/          # Example PS module (intentionally flawed for demo)
-│   └── chocolatey-package/         # Example Choco package (intentionally flawed for demo)
+│   ├── powershell-module/          # Intentionally flawed PS module (demo fixture)
+│   └── chocolatey-package/         # Intentionally flawed Choco package (demo fixture)
 │
 ├── .github/workflows/
 │   ├── powershell-supply-chain.yml # Full pipeline for PowerShell modules
 │   └── chocolatey-supply-chain.yml # Full pipeline for Chocolatey packages
 │
-├── actions/                        # Reusable composite actions
-│   ├── ps-script-analysis/         # PSScriptAnalyzer + custom rules
-│   ├── sbom-generate/              # SBOM generation via Syft
-│   ├── vulnerability-scan/         # Vulnerability scanning via Grype
-│   ├── semgrep-scan/               # Pattern matching for unsafe code
-│   ├── dependency-pin-check/       # Floating dependency detection (.psd1 / .nuspec)
-│   ├── choco-naming-validation/    # Package naming checks
-│   ├── choco-integrity-check/      # Checksum and binary verification
-│   └── provenance-generate/        # SLSA-style provenance artifacts
+├── actions/                        # Reusable composite actions — adopt any one independently
+│   ├── ps-script-analysis/         # PSScriptAnalyzer → SARIF
+│   ├── semgrep-scan/               # Pattern matching for unsafe code → SARIF
+│   ├── dependency-pin-check/       # Floating-dependency detection (.psd1 / .nuspec)
+│   ├── choco-naming-validation/    # Levenshtein similarity against CCR
+│   ├── choco-integrity-check/      # Checksum + VERIFICATION.txt drift check
+│   ├── sbom-generate/              # SBOM via Syft
+│   ├── vulnerability-scan/         # Grype against the SBOM → SARIF
+│   └── provenance-generate/        # SLSA-style provenance artifact
 │
-├── semgrep-rules/                  # Custom rules for PowerShell and Chocolatey patterns
-│   ├── powershell-unsafe-patterns.yml    # 12 rules covering download-execute, secrets, obfuscation, pinning
-│   └── chocolatey-install-patterns.yml   # 12 rules covering checksums, path/registry/service changes, pinning
+├── semgrep-rules/
+│   ├── powershell-unsafe-patterns.yml    # 12 rules: download-execute, secrets, obfuscation, pinning
+│   └── chocolatey-install-patterns.yml   # 12 rules: checksums, PATH/registry/service, pinning
 │
 ├── scripts/
-│   └── Invoke-LocalValidation.ps1  # Run all checks locally before pushing
+│   └── Invoke-LocalValidation.ps1  # Run the checks locally before pushing
 │
 ├── docs/
-│   ├── threat-model.md             # The threat vectors this project addresses
-│   ├── tooling-decisions.md        # Why these tools and what the tradeoffs are
-│   ├── enterprise-integration.md   # Connecting outputs to SCA and cloud security platforms
-│   └── remediation-guide.md        # How to fix every finding type the pipeline surfaces
+│   ├── threat-model.md             # Threats this pipeline addresses, with real-incident grounding
+│   ├── tooling-decisions.md        # Why these tools, what was considered, what the tradeoffs are
+│   ├── enterprise-integration.md   # How the pipeline outputs feed into SCA and CSPM platforms
+│   └── remediation-guide.md        # Copy-paste fixes for every finding type the pipeline surfaces
 │
-├── talk/                           # Slide deck, talk track, and Marp theme
-│   ├── presentation.md             # Main deck
-│   ├── talk-track.md               # Speaker notes
-│   └── summit-2026.css             # Summit 2026 Marp theme
+├── talk/                           # Slide deck + speaker track + Summit 2026 Marp theme
+│   ├── presentation.md
+│   ├── talk-track.md
+│   └── summit-2026.css
 │
+├── ANALYSIS.md                     # Pre-talk critique + revised structure, slides, and track
 └── CONTRIBUTING.md                 # How to add rules, actions, and examples
 ```
 
-## The Toolchain
+## Quick start
 
-|Tool                                                              |What It Does                  |Used For                                           |
-|------------------------------------------------------------------|------------------------------|---------------------------------------------------|
-|[PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer)|Static analysis for PowerShell|Script quality, unsafe patterns                    |
-|[Semgrep](https://github.com/semgrep/semgrep)                     |Pattern-based code scanning   |Secrets, download-and-execute, custom rules        |
-|[Syft](https://github.com/anchore/syft)                           |SBOM generation               |Software bill of materials for modules and packages|
-|[Grype](https://github.com/anchore/grype)                         |Vulnerability scanning        |CVE matching against generated SBOMs               |
-|[SARIF](https://sarifweb.azurewebsites.net/)                      |Reporting format              |Unified output that surfaces in GitHub PR reviews  |
-|Built-in (PowerShell)                                             |Dependency pin check          |Floating dependency detection in .psd1 and .nuspec |
-
-No vendor licenses. No proprietary platforms. Everything runs in GitHub Actions on public runners.
-
-## Quick Start
-
-### Fork and run against the examples
-
-1. Fork this repo
-1. Open a PR that modifies anything in `examples/powershell-module/` or `examples/chocolatey-package/`
-1. Watch the pipeline run and review the SARIF findings in the PR
-
-### Use the composite actions in your own repo
-
-Pick the actions you need and reference them in your workflows:
-
-```yaml
-- uses: your-fork/publish-with-receipts/actions/sbom-generate@main
-  with:
-    path: ./your-module
-```
-
-Each composite action is self-contained. You can adopt one at a time. You don’t have to use the whole pipeline to get value.
-
-## What the Examples Demonstrate
-
-The example PowerShell module and Chocolatey package are **intentionally flawed**. They contain realistic anti-patterns that the pipeline is designed to catch:
-
-**PowerShell module:**
-
-- Download-and-execute patterns in exported functions
-- Floating dependency versions
-- Hardcoded credentials in source
-- Missing or incomplete module manifest metadata
-
-**Chocolatey package:**
-
-- Missing or incorrect checksums for external binary downloads
-- Unsafe patterns in `chocolateyInstall.ps1`
-- No SBOM for embedded third-party binaries
-- Package naming that could conflict with existing packages
-
-These aren’t cartoonishly broken. They’re the kind of things that ship when people are moving fast and CI doesn’t check for them.
-
-## Threat Vectors Covered
-
-For the full write-up, see <docs/threat-model.md>. The short version:
-
-- **Typosquatting** — packages with names designed to catch common misspellings
-- **Download-and-execute** — install scripts that pull and run binaries from external URLs without verification
-- **Floating dependencies** — unpinned versions that can be swapped out from under you
-- **Secret leakage** — API keys, tokens, and credentials committed to module source or package scripts
-- **Unverified binaries** — external executables included or downloaded without checksum validation
-- **Unsafe install script patterns** — Chocolatey install scripts that modify system state in undocumented ways
-
-## Enterprise Integration
-
-The pipeline outputs (SBOMs, SARIF, provenance artifacts) are designed to be useful on their own but also to feed into larger security tooling. Teams running SCA platforms or cloud security tools can ingest these artifacts for ongoing monitoring, policy enforcement, and contextual risk evaluation.
-
-See <docs/enterprise-integration.md> for details on how the pipeline-level outputs connect to runtime context.
-
-## Presentation
-
-The slide deck and speaker materials live under `talk/`:
-
-- `talk/presentation.md`
-- `talk/talk-track.md`
-
-The deck uses the **Summit 2026 Marp theme** by [HeyItsGilbert](https://github.com/HeyItsGilbert/PSSummit2026), stored here as `talk/summit-2026.css`. See [AGENTS.md](AGENTS.md) for usage and export instructions.
-
-The presentation was reviewed using the **death-by-ppt skill** by [HeyItsGilbert](https://github.com/HeyItsGilbert/marketplace/blob/main/plugins/presentation-review/skills/death-by-ppt/SKILL.md), stored locally at [.claude/skills/death-by-ppt/SKILL.md](.claude/skills/death-by-ppt/SKILL.md).
-
-## Background
-
-This repo is the companion material for the talk **”Provenance Before Publish: Securing PowerShell and Chocolatey Supply Chains from the Pipeline Out”** presented at Chocolatey Fest 2026.
-
-The talk covers the threat model, walks through the tooling decisions, and demonstrates the full pipeline end to end. But you don’t need to have seen the talk to use the repo. The docs folder covers the same ground.
-
-## Running checks locally
-
-Before pushing, run the local validation script to get the same feedback that CI will produce:
+### Try it against the flawed examples
 
 ```powershell
-# Run all checks against both example packages
+# Clone, run locally
+git clone https://github.com/adilio/publish-with-receipts.git
+cd publish-with-receipts
 ./scripts/Invoke-LocalValidation.ps1 -Target both
-
-# Quick check (PowerShell only, skip SBOM/Grype)
-./scripts/Invoke-LocalValidation.ps1 -Target powershell -SkipSBOM
-
-# Fail on any finding (mirrors enforce mode)
-./scripts/Invoke-LocalValidation.ps1 -Target both -FailOnFindings
 ```
 
 Required tools: `Install-Module PSScriptAnalyzer`, `pip install semgrep`, and optionally [Syft](https://github.com/anchore/syft) and [Grype](https://github.com/anchore/grype).
 
-## Required permissions
+### Use a single action in your own workflow
 
-The provenance-generate action uses `actions/upload-artifact` and the semgrep/vulnerability-scan actions upload SARIF to GitHub Code Scanning. Your workflow needs:
+Every action is self-contained. You do not need to adopt the whole pipeline.
+
+```yaml
+# Minimum adoption: SBOM + SARIF
+- uses: adilio/publish-with-receipts/actions/sbom-generate@main
+  with:
+    path: ./your-module
+    output-file: sbom.cdx.json
+    artifact-name: sbom
+
+- uses: adilio/publish-with-receipts/actions/vulnerability-scan@main
+  with:
+    sbom-path: sbom.cdx.json
+    sarif-output: grype.sarif
+```
+
+### Fork it
+
+Open a PR that edits anything in `examples/` and watch the pipeline produce SARIF annotations directly in the PR diff.
+
+## What the example fixtures demonstrate
+
+Both example packages are *intentionally flawed in realistic ways* — the kind of thing that ships when somebody is moving fast, not cartoonishly broken.
+
+**PowerShell module (`examples/powershell-module/`)**
+
+- Floating dependency in `RequiredModules`
+- `ScriptsToProcess` — the same mechanism used in Aqua's 2023 typosquat PoC
+- An exported function combining a hardcoded API key, TLS validation bypass, `Invoke-WebRequest | Invoke-Expression`, and base64-encoded command execution
+- Missing metadata (`ProjectUri`, `LicenseUri`, `ReleaseNotes`)
+- A Pester test suite that passes — the supply chain issues are invisible to traditional CI
+
+**Chocolatey package (`examples/chocolatey-package/`)**
+
+- Missing checksums on external binary downloads
+- `Invoke-WebRequest` outside Chocolatey's built-in helpers
+- Undocumented PATH modification with no matching uninstall cleanup (local priv-esc precondition)
+- Registry writes containing a hardcoded internal URL
+- `VERIFICATION.txt` with no checksums
+
+## Threats the pipeline addresses
+
+The short list, each backed by a real incident. Full write-up in [`docs/threat-model.md`](docs/threat-model.md).
+
+| Threat | Real-world grounding |
+|---|---|
+| Name impersonation | Aqua Nautilus `Az.Table` PoC, 2023 — production Azure callbacks within hours |
+| Download-and-execute | Serpent malware campaign, 2022 — legitimate Chocolatey use to install a backdoor |
+| Floating dependency | Structural — no PowerShell lockfile, `ModuleVersion` is a floor |
+| Unverified binary drift | 3CX supply chain compromise, 2023 — vendor's signed installer pre-backdoored |
+| Secret leakage | Aqua PSGallery research, 2023 — unlisted packages still served via API |
+| Unsafe install patterns | Under-reviewed in internal repos; PATH modification → LPE chain |
+
+## Toolchain (free, open source)
+
+| Tool | Purpose | Output |
+|---|---|---|
+| [PSScriptAnalyzer](https://github.com/PowerShell/PSScriptAnalyzer) | PowerShell static analysis | SARIF |
+| [Semgrep](https://github.com/semgrep/semgrep) | Pattern-based scanning (custom rules) | SARIF |
+| [Syft](https://github.com/anchore/syft) | SBOM generation | CycloneDX JSON |
+| [Grype](https://github.com/anchore/grype) | Vulnerability scanning | SARIF + JSON |
+| [SLSA / GitHub Attestations](https://slsa.dev/) | Provenance | in-toto JSON |
+
+No vendor licenses. No proprietary platforms. Everything runs on GitHub Actions public runners.
+
+## Monday-morning adoption path
+
+You do not need to take the whole pipeline on day one. Three-step path:
+
+1. **One afternoon — visibility.** Add `ps-script-analysis` + `semgrep-scan` with SARIF upload, non-blocking. Let your team see what fires in the PR diff.
+2. **One afternoon, later — artifacts.** Add `sbom-generate` + `provenance-generate`. Neither blocks anything; both produce receipts that become useful when you need them.
+3. **Ongoing — tune, suppress with justification, decide what blocks.** Treat enforcement as a decision you earn by first seeing the baseline, not a flag you flip on day one.
+
+For internal Chocolatey repos, that last step moves up the priority list. Community repos have moderation. Your internal repo has whatever you enforce in CI.
+
+## Required GitHub workflow permissions
 
 ```yaml
 permissions:
   contents: read
-  security-events: write  # for SARIF upload to Code Scanning
-  id-token: write         # for provenance attestation signing
+  security-events: write  # SARIF upload to Code Scanning
+  id-token: write         # provenance attestation signing
   actions: read
 ```
 
-The `id-token: write` permission is required for provenance generation. Without it, the provenance artifact is still created and uploaded, but it cannot be signed or verified with `slsa-verifier`. If you don't need signed attestations, you can omit it — the pipeline will still run.
+`id-token: write` is required for signed provenance via `slsa-verifier`. Without it, the provenance artifact is still produced and uploaded, but it cannot be cryptographically verified. If you don't need signed attestations, omit it — the rest of the pipeline still runs.
 
 ## Suppressing false positives
 
-When a Semgrep or PSScriptAnalyzer finding is a known false positive (e.g., intentional use of `Invoke-Expression` in a utility function), suppress it inline with a comment:
+When a Semgrep or PSScriptAnalyzer finding is a known false positive, suppress inline with a justification comment:
 
-**Semgrep:**
 ```powershell
-# nosemgrep: powershell-invoke-expression
+# nosemgrep: powershell-invoke-expression — intentional: local script block, not remote content
 $result = Invoke-Expression $localScriptBlock
 ```
 
-**PSScriptAnalyzer:**
 ```powershell
 [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
 param()
 ```
 
-Suppressions should include a justification comment explaining why the finding is a false positive. See [docs/remediation-guide.md](docs/remediation-guide.md) for the full suppression reference.
+Suppressions ship in SARIF and are visible in the PR. See [`docs/remediation-guide.md`](docs/remediation-guide.md) for the full suppression reference and copy-paste fixes for every finding type the pipeline surfaces.
 
-## Remediating findings
+## Running checks locally
 
-See [docs/remediation-guide.md](docs/remediation-guide.md) for copy-paste fixes for every finding type the pipeline can surface — PSScriptAnalyzer rules, Semgrep rules, dependency pinning issues, and Grype CVEs.
+```powershell
+# Full check, both examples
+./scripts/Invoke-LocalValidation.ps1 -Target both
+
+# Quick PS-only check (skip Syft/Grype)
+./scripts/Invoke-LocalValidation.ps1 -Target powershell -SkipSBOM
+
+# CI-equivalent mode (fail on findings)
+./scripts/Invoke-LocalValidation.ps1 -Target both -FailOnFindings
+```
+
+## Talk materials
+
+All talk content lives under `talk/`:
+
+- [`talk/presentation.md`](talk/presentation.md) — the Marp deck
+- [`talk/talk-track.md`](talk/talk-track.md) — continuous speaker track for the 90-minute session
+- [`talk/summit-2026.css`](talk/summit-2026.css) — the Summit 2026 Marp theme (by [@HeyItsGilbert](https://github.com/HeyItsGilbert/PSSummit2026))
+
+Export instructions and theme notes: [`AGENTS.md`](AGENTS.md).
+
+The pre-delivery review was done with the **death-by-ppt** skill by [@HeyItsGilbert](https://github.com/HeyItsGilbert/marketplace/blob/main/plugins/presentation-review/skills/death-by-ppt/SKILL.md). A full critique and the revised deck structure are in [`ANALYSIS.md`](ANALYSIS.md).
 
 ## Contributing
 
-Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add Semgrep rules, composite actions, and example anti-patterns. If you’ve got a threat vector that isn’t covered, a tool that fits the pipeline better, or a rule that catches something the current set misses, open an issue and let’s talk about it.
+Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add Semgrep rules, composite actions, and example anti-patterns. If there's a threat vector you think should be covered — or a tool that fits the pipeline better — open an issue.
 
 ## License
 
