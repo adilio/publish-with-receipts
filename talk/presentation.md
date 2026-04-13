@@ -56,15 +56,11 @@ Gotta thank the sponsors!
 <p class="muted">The pattern is the same every time: trusted infrastructure becomes the attack vector. The thing that was supposed to be safe is the thing that runs.</p>
 
 <!--
-"Supply chain attacks used to be something that happened to other people — nation-state targets, critical infrastructure, household names. That's not the world we're in anymore.
+"Supply chain attacks used to sound like something that happened to other people — nation-state targets, critical infrastructure, household names. That's not the world we're in anymore.
 
-XZ Utils: a single maintainer, burned out, two years of patient social engineering by an attacker who contributed code, built trust, and then slipped a backdoor into a compression library that was shipping in Debian, Fedora, and Kali. It was caught by accident — a Microsoft engineer noticed slightly elevated SSH login times. If he hadn't, it ships.
+XZ is the classic example. Months of social engineering, then a backdoor in a library everyone thought was safe. Polyfill.io showed that a trusted CDN can be the attack vector. tj-actions showed the same thing can happen one layer up in CI itself.
 
-Polyfill.io: a CDN that served JavaScript to over 100,000 websites gets acquired. New owner immediately starts injecting malicious code. The domain itself was the trusted thing. The update mechanism was the attack.
-
-tj-actions: a GitHub Actions step used in CI pipelines across thousands of open-source repos. Compromised in March 2025. Every pipeline that ran it was exfiltrating secrets into public CI logs. Not a exotic target — a utility step that developers treat like a standard library.
-
-The pattern is the same every time. The trusted thing becomes the attack vector. The thing you didn't think twice about is the thing that runs."
+So the lesson is not 'trust nothing.' It's 'assume the routine-looking thing is exactly where the abuse will hide.'"
 -->
 
 ---
@@ -97,9 +93,9 @@ The pattern is the same every time. The trusted thing becomes the attack vector.
 <p class="muted">The window between "vulnerability disclosed" and "vulnerability exploited" is closing faster than patch cycles. Provenance and receipts don't stop a zero-day — but they tell you which builds are exposed in minutes, not weeks.</p>
 
 <!--
-"The reason supply chain security feels more urgent right now isn't just that attacks are more common. It's that the response window is shrinking.
+"The reason supply-chain security feels more urgent right now isn't just that attacks are more common. It's that the response window is shrinking.
 
-There's a site — zerodayclock.com — that tracks the time between a CVE being published and active exploitation in the wild. Pull it up some time and just watch the numbers. What used to be measured in weeks is now measured in days. Sometimes hours. AI tooling — the same category of thing as what we all use every day for writing code — is being used by attackers to automate exploit variant generation, to scan for affected systems at scale, and to craft payloads faster than any human team could.
+There's a site — zerodayclock.com — that tracks the time between a CVE being published and active exploitation in the wild. Pull it up sometime and just watch the numbers. What used to be measured in weeks is now measured in days. Sometimes hours. AI tooling is being used by attackers to generate variants, scan at scale, and move faster than a human response team can.
 
 This doesn't change what we're building today. Provenance and SBOMs don't stop a zero-day. But they do mean that when the next one drops — and it will — you can run Grype against your stored SBOMs and know in minutes which of your builds are exposed. Not weeks of manual archaeology. Minutes. That's the value of the receipt."
 -->
@@ -128,9 +124,9 @@ PSGallery hosts tens of thousands of modules. CCR serves packages to millions of
 
 As far as anyone has publicly disclosed, neither registry has been compromised at the infrastructure level. That's genuinely good. It's not luck — it's the result of people taking security seriously.
 
-What I'm pointing at is the structural exposure. PSGallery and CCR have the same shape of risk that made XZ Utils dangerous: install-time execution, trust in package authors, dependency on upstream binaries. They have the same shape of risk that made tj-actions dangerous: a broadly trusted artifact that runs automatically in pipelines.
+What I'm pointing at is the structural exposure. PSGallery and CCR still have the same shape of risk that made XZ and tj-actions dangerous: install-time execution, trust in package authors, dependency on upstream binaries, and no install-time receipt verification.
 
-The difference is that the PowerShell and Chocolatey ecosystems have less publisher-side tooling around provenance and receipts than npm, cargo, or PyPI. Not because the registries failed — because the tooling hasn't been built yet. That we know of is doing a lot of work in the title of this slide. The honest answer is we don't know what we haven't found.
+The difference is that the publisher-side tools for provenance and receipts are thinner here than in ecosystems like npm or cargo. Not because the registries failed — because the tooling hasn't been built yet. That we know of is doing a lot of work in the title of this slide. The honest answer is we don't know what we haven't found.
 
 That's the gap. And that's what we're here to close — on the publisher side, before the package reaches the registry."
 -->
@@ -195,9 +191,9 @@ One dot. Ten million downloads of impersonation surface.
 
 Aqua Nautilus did this for real in 2023. They registered `Az.Table` — same letters, extra dot — to impersonate `AzTable`, which at the time had more than ten million downloads. Callbacks from production Azure environments within hours. Not a prank. A proof of concept that worked the first time they tried it.
 
-The reason it worked is that PSGallery, unlike npm, doesn't have moniker rules at the registry layer. That isn't a failing of the PSGallery team. Moniker rules are a big lift, they have false-positive consequences for legitimate forks, and there are reasonable arguments about whether the registry or the publisher should own name hygiene. Shared-challenge problem.
+The reason it worked is that PSGallery, unlike npm, doesn't have moniker rules at the registry layer. That's not a failing of the PSGallery team. Moniker rules are a big lift, they have false-positive consequences for legitimate forks, and there are reasonable arguments about whether the registry or the publisher should own name hygiene. Shared-challenge problem.
 
-Microsoft's in-progress answer at the registry layer — and if you want the deep version, Michael Green and Sydney Smith walked us through it at Summit last year — is the Microsoft Artifact Registry and PSResourceGet going over OCI. Structural fix: only Microsoft can publish under the MAR namespace, so you literally can't squat on `MAR/PSResource/Az.Accounts`. Different layer from this talk. Also not shipped for most of what you install today — only the Azure PowerShell team is fully onboarded, and MAR doesn't help for community packages or third-party vendor modules. Which means if you care whether your package is confusable with someone else's, the check still has to live in your pipeline. We'll do it in forty minutes."
+Microsoft's in-progress answer at the registry layer is the Microsoft Artifact Registry and PSResourceGet over OCI. Structural fix: only Microsoft can publish under the MAR namespace, so you literally can't squat on `MAR/PSResource/Az.Accounts`. Different layer from this talk. Also not shipped for most of what you install today — only the Azure PowerShell team is fully onboarded, and MAR doesn't help for community packages or third-party vendor modules. Which means if you care whether your package is confusable with someone else's, the check still has to live in your pipeline."
 -->
 
 ---
@@ -579,9 +575,11 @@ The SBOM records what *I shipped*. It does not record what resolves on *your* ma
 <!--
 "SBOM next. CycloneDX JSON, generated by Syft against the module directory. Components array. PURLs. Resolved versions. File hashes. Useful as an audit trail.
 
-Now the honest part — this is the lockfile gap from Act I finally landing. This SBOM records what *I shipped*. It does *not* record what resolves on the consumer's machine when they `Install-Module` this thing. PowerShell has no lockfile. `Install-Module` resolves `RequiredModules` at install time against whatever is currently the highest-satisfying version in PSGallery. I ship Monday. You install Tuesday. Your dependency graph might differ from mine. My SBOM tells you what I built. It doesn't tell you what ran on your machine.
+Syft is the inventory pass. It walks the directory, figures out what packages and files are there, and emits a machine-readable bill of materials. In plain English: it tells you what is in the box. It does not tell you whether the box is safe. That distinction matters.
 
-That is the single biggest unsolved problem in PowerShell supply chain security today, and I want to be clear: nobody on stage or in the registry team has a clever fix hiding in their back pocket. Not me. Not PSGallery. Not Microsoft. The current workaround is to pin `RequiredVersion` — exact version — instead of `ModuleVersion`, and enforce with `dependency-pin-check`. Maintainer-side commitment, not a consumer-side guarantee. We come back to this in Act III."
+Now the honest part. This SBOM records what I shipped. It does *not* record what resolves on the consumer's machine when they `Install-Module` this thing. PowerShell has no lockfile. `Install-Module` resolves `RequiredModules` at install time against whatever is currently the highest-satisfying version in PSGallery. I ship Monday. You install Tuesday. Your dependency graph might differ from mine. My SBOM tells you what I built. It doesn't tell you what ran on your machine.
+
+That is the single biggest unsolved problem in PowerShell supply chain security today. The current workaround is to pin `RequiredVersion` — exact version — instead of `ModuleVersion`, and enforce with `dependency-pin-check`. Maintainer-side commitment, not a consumer-side guarantee. One practical thing to say out loud: the SBOM becomes really valuable when something goes wrong later. If a CVE drops, or incident response needs to know which releases were exposed, the SBOM gives you a fast answer without rebuilding the world or re-scanning every source repo from scratch."
 -->
 
 ---
@@ -601,9 +599,11 @@ When a CVE drops six months from now, you re-run Grype against the stored SBOM a
 </div>
 
 <!--
-"Grype reads the SBOM from the previous step. Runs it against NVD and the GitHub Advisory Database. Findings go back into Code Scanning.
+"Grype is the second half of the pair. Syft inventories what is there; Grype looks at that inventory and asks whether any of the components have known vulnerabilities. It reads the SBOM, matches packages and versions against vulnerability data, and reports the results back into Code Scanning.
 
-Build-time value: obvious. Less-obvious value: retroactive. The SBOM is retained as an artifact for a year by default. When a CVE drops six months from now against a dependency you shipped, you re-run Grype against the stored SBOM from that release and you know in seconds which builds were affected. That is incident response, not prevention. Both matter — and in my experience, in an enterprise, the incident-response case is what actually gets this pipeline funded, not the build-time gating. Because leadership has sat through the other kind of incident, the one where you're trying to figure out *after the fact* whether a given build is exposed, and nobody has an answer, and everybody stays late. [laugh beat, knowing]"
+That split is worth calling out because it keeps the steps honest. Inventory is still inventory, and vulnerability scanning is still vulnerability scanning. When people collapse both into one vague 'scan' word, they lose the point of each tool.
+
+Build-time value is obvious. The less-obvious value is retroactive. The SBOM is retained as an artifact for a year by default. When a CVE drops six months from now against a dependency you shipped, you re-run Grype against the stored SBOM from that release and you know in seconds which builds were affected. That's incident response, not prevention. Both matter — and in my experience the incident-response case is what gets this pipeline funded in an enterprise, not the build-time gating."
 -->
 
 ---
@@ -630,13 +630,17 @@ Build-time value: obvious. Less-obvious value: retroactive. The SBOM is retained
 </div>
 
 <!--
-"Provenance. Source repo, commit SHA, workflow reference, artifact hash, timestamp. Here's the receipt.
+"Provenance. Here's the receipt.
 
-Now. Who's reading this receipt? `Install-Module` doesn't check it. `choco install` doesn't check it. The registries don't require it at upload. No install-time verifier ships in the ecosystem today. I produce the provenance. The consumer never asks to see it.
+The easiest mental model is chain of custody. Provenance says: this artifact came from this source, built at this time, by this workflow, with these inputs, and it produced this hash. In SLSA terms, it's the verifiable information that lets you trace an artifact back through the supply chain to where it came from. In GitHub terms, artifact attestations are the mechanism for recording and later verifying that build provenance.
 
-That is a real problem with the current state of this, and I'm not going to pretend it isn't. What I can say is the provenance is useful *to the maintainer* right now. If a customer ever asks 'can you prove the module you shipped on this date came from this commit and was built by this pipeline,' I can answer. If an incident happens and I need to establish definitively which build produced which artifact, I have it. That's maintainer-side audit value — real, but narrower than an end-to-end story.
+Now. Who's reading this receipt? `Install-Module` doesn't check it. `choco install` doesn't check it. The registries don't require it at upload. No install-time verifier ships in the ecosystem today.
 
-The full loop closes when the registries require signed provenance at upload and the install tooling verifies at install. Both are ecosystem-scale asks. Not my pipeline's problem to solve, and frankly, not any single pipeline's problem to solve. What I can do in the meantime is produce the receipts now, so the day a verifier ships, my back catalog is ready to be read. That's the bet."
+I produce the provenance. The consumer never asks to see it.
+
+That's a real problem with the current state of this, and I'm not going to pretend it isn't. What I can say is the provenance is useful *to the maintainer* right now. If a customer ever asks 'can you prove the module you shipped on this date came from this commit and was built by this pipeline,' I can answer. If an incident happens and I need to establish definitively which build produced which artifact, I can.
+
+That's maintainer-side audit value — real, but narrower than an end-to-end story. The full loop closes when registries require signed provenance at upload and install tooling verifies at install. Both are ecosystem-scale asks. They're not my pipeline's problem. What I can do in the meantime is produce the receipts now, so that when a verifier eventually ships, my back catalog is ready to be read."
 -->
 
 ---

@@ -41,6 +41,8 @@ Revised structure (see `ANALYSIS.md` for the reasoning):
 
 `choco pack` succeeded. The Chocolatey extension's `Test-PackageForVerification` sees nothing wrong. If I'd submitted to the community repository, the Validator would have approved it and the Verifier would have confirmed it installs. A human moderator might have caught something. Probably not everything. If I'd submitted to an internal repo — which is where most of you are actually publishing — nothing would have caught any of it, because internal repos don't have moderators. They have whoever you designated, which is frequently nobody.
 
+The reason I start with a boring-looking package is that a lot of recent supply-chain attacks did not invent a new delivery mechanism. They just lived inside the packaging and build systems we already trust. XZ is the classic example: months of social engineering, then a backdoor in a library everyone thought was safe. tj-actions showed the same thing can happen one layer up in CI itself. So the lesson is not 'trust nothing.' It's 'assume the routine-looking thing is exactly where the abuse will hide.'
+
 Let me show you what it actually does."
 
 ---
@@ -59,6 +61,8 @@ Three: it writes a registry value containing what looks like a corporate interna
 
 `choco install` prints 'The install was successful.' It always prints that. That is also what it prints when nothing weird happened. The output is the same in both cases. That's the problem."
 
+Why that matters: package managers are optimized for distribution, not intent. They can tell you something installed successfully. They usually cannot tell you whether it was a good idea, whether the binary changed upstream, or whether the script just opened a new foothold on the machine. Supply-chain security starts where install success stops."
+
 ---
 
 ### Slide 5 — The gap this talk is about
@@ -68,6 +72,8 @@ Three: it writes a registry value containing what looks like a corporate interna
 "That's the talk. The gap I'm here to talk about is that PowerShell and Chocolatey both lack the enforcement plumbing that every other major package ecosystem took for granted years ago.
 
 No lockfile. No moniker rules. `VERIFICATION.txt` is a norm, not a contract. Moderation doesn't scale to internal repositories. This is not a critique of the people running the community repo or PSGallery — both teams are doing real work. The issue is the layer *before* their work. By the time a package reaches moderation, the receipts have not been generated, and the registries cannot produce them retroactively. That has to happen in your pipeline."
+
+Another way to say it: registries are last-mile checkpoints. They can reject bad inputs, but they do not know what you meant to build, what you downloaded before packaging, or which source commit actually produced the artifact. The publisher's pipeline is where you still have enough context to answer those questions."
 
 ---
 
@@ -83,6 +89,8 @@ PSGallery runs manifest validation, installation testing during validation, anti
 
 This is real infrastructure. I'm not recommending you skip it. I'm recommending that by the time your package arrives at one of these registries, you can hand the moderator three things they don't currently receive: an SBOM, a set of scan results, and a provenance document."
 
+If I compress that for the room: the registry checks whether the package is acceptable to publish. The pipeline checks whether the package is acceptable to build in the first place. Related problems, not the same problem."
+
 ---
 
 ### Slide 7 — The three questions
@@ -92,6 +100,8 @@ This is real infrastructure. I'm not recommending you skip it. I'm recommending 
 What's in this package? That's the SBOM.
 What did you check? Scan results, in SARIF.
 Can you prove when and how it was built? That's provenance.
+
+The quick definitions are: SBOM means a machine-readable inventory of what was in the build, SARIF means the format GitHub Code Scanning understands, and provenance means the build record that ties the artifact back to the source, workflow, and inputs that made it.
 
 We're going to build each of those in the next forty minutes. I also want to be honest with you up front: the answers I can give today are different for each question and different for each ecosystem. The SBOM story works better for Chocolatey packages with embedded binaries than it does for pure PowerShell modules. The provenance story — I can produce a receipt; nobody's reading it at install time yet.
 
@@ -114,6 +124,8 @@ We're going to come back to that honest accounting at the end of the talk."
 **Unverified binary drift.** 3CX supply chain compromise, 2023. Attackers compromised the vendor's build environment. The signed installer the vendor distributed was already backdoored. Every Chocolatey package pointing at the official 3CX URL was distributing malware.
 
 **Secret leakage.** Aqua's PSGallery research, same 2023 paper. Found publishers who had accidentally uploaded `.git/config` with GitHub API keys, and publishing scripts containing PSGallery API keys, in unlisted packages. Still accessible via the PSGallery API after the authors thought they'd removed them.
+
+If you want two fresher examples to anchor the room in current reality, think about XZ in 2024 and tj-actions/changed-files in 2025. XZ was a long-game maintainer compromise that made it all the way into distro release candidates. tj-actions showed that the thing getting compromised can be the automation glue in GitHub Actions itself, not just the library your app imports. The point is simple: the attack surface has moved one layer upstream. Maintainers, build pipelines, and reusable CI components are now part of the target set."
 
 I'm going to map the rest of the talk to this table. Each row gets addressed by at least one check in the pipeline we're about to build."
 
@@ -173,11 +185,15 @@ The dollar cost of this is zero. The setup is one `github/codeql-action/upload-s
 
 "SBOM next. CycloneDX JSON, generated by Syft against the module directory. Components array. PURLs. Resolved versions. File hashes. Useful as an audit trail.
 
+Syft is the inventory pass. It walks the directory, figures out what packages and files are there, and emits a machine-readable bill of materials. In plain English: it tells you what is in the box. It does not tell you whether the box is safe. That distinction matters.
+
 Now the honest part. This SBOM records what I shipped. It does *not* record what resolves on the consumer's machine when they `Install-Module` this thing.
 
 PowerShell has no lockfile. `Install-Module` resolves `RequiredModules` at install time against whatever is currently the highest-satisfying version in PSGallery. I ship Monday, you install Tuesday, you might have a different dependency graph than my build produced. My SBOM tells you what I built. It doesn't tell you what ran on your machine.
 
 That's the lockfile gap. It's the single biggest unsolved problem in PowerShell supply chain security today. No tool on this pipeline fully closes it. The closest current workaround is to pin `RequiredVersion` — the exact version — instead of `ModuleVersion`, and enforce that pinning with `dependency-pin-check`. That's a maintainer-side commitment, not a consumer-side guarantee.
+
+One practical thing to say out loud: the SBOM becomes really valuable when something goes wrong later. If a CVE drops, or incident response needs to know which releases were exposed, the SBOM gives you a fast answer without rebuilding the world or re-scanning every source repo from scratch.
 
 We'll come back to what a real fix would look like in Act III."
 
@@ -185,7 +201,9 @@ We'll come back to what a real fix would look like in Act III."
 
 ### Slide 14 — Vulnerability scan, retroactively
 
-"Grype reads the SBOM, runs it against NVD and the GitHub Advisory Database, findings go back into Code Scanning.
+"Grype is the second half of the pair. Syft inventories what is there; Grype looks at that inventory and asks whether any of the components have known vulnerabilities. It reads the SBOM, matches packages and versions against vulnerability data, and reports the results back into Code Scanning.
+
+That split is worth calling out because it keeps the steps honest. Inventory is still inventory, and vulnerability scanning is still vulnerability scanning. When people collapse both into one vague 'scan' word, they lose the point of each tool.
 
 Build-time value is obvious. The less-obvious value is retroactive. The SBOM is retained as an artifact for a year by default. When a CVE drops six months from now against a dependency you shipped, you re-run Grype against the stored SBOM from that release and you know in seconds which builds were affected. That's incident response, not prevention. Both matter — and in my experience the incident-response case is what gets this pipeline funded in an enterprise, not the build-time gating."
 
@@ -197,13 +215,15 @@ Build-time value is obvious. The less-obvious value is retroactive. The SBOM is 
 
 "Provenance. Here's the receipt.
 
+The easiest mental model is chain of custody. Provenance says: this artifact came from this source, built at this time, by this workflow, with these inputs, and it produced this hash. In SLSA terms, it's the verifiable information that lets you trace an artifact back through the supply chain to where it came from. In GitHub terms, artifact attestations are the mechanism for recording and later verifying that build provenance.
+
 Now. Who's reading this receipt? `Install-Module` doesn't check it. `choco install` doesn't check it. The registries don't require it at upload. No install-time verifier ships in the ecosystem today.
 
 I produce the provenance. The consumer never asks to see it.
 
 That's a real problem with the current state of this, and I'm not going to pretend it isn't. What I can say is the provenance is useful *to the maintainer* right now. If a customer ever asks 'can you prove the module you shipped on this date came from this commit and was built by this pipeline,' I can answer. If an incident happens and I need to establish definitively which build produced which artifact, I can.
 
-That's maintainer-side audit value — real but narrower than an end-to-end story. The full loop closes when the registries require signed provenance at upload and the install tooling verifies at install. Both are ecosystem-scale asks. They're not my pipeline's problem. What I can do in the meantime is produce the receipts now so that the day a verifier ships, my back catalog is ready to be read."
+That's maintainer-side audit value — real, but narrower than an end-to-end story. The full loop closes when registries require signed provenance at upload and install tooling verifies at install. Both are ecosystem-scale asks. They're not my pipeline's problem. What I can do in the meantime is produce the receipts now, so that when a verifier eventually ships, my back catalog is ready to be read."
 
 ---
 

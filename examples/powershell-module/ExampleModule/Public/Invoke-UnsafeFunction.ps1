@@ -8,6 +8,9 @@ function Invoke-UnsafeFunction {
         supply chain security demonstration purposes. Each flaw is labelled
         with the Semgrep rule that should detect it.
 
+        This file is intentionally kept under active edit so the demo PR
+        exercises the security scanning workflow end-to-end.
+
         DO NOT use these patterns in production code.
 
     .PARAMETER ConfigUrl
