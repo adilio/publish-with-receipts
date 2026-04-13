@@ -28,7 +28,6 @@ paginate: true
 
 
 <!-- _class: sponsors -->
-<!-- _paginate: skip -->
 
 # Thanks!
 
@@ -49,22 +48,26 @@ Gotta thank the sponsors!
 
 <ul class="primary-list">
 <li><strong>XZ Utils (2024)</strong> — two years of social engineering to backdoor a Linux compression library shipping in major distros</li>
-<li><strong>Polyfill.io (2024)</strong> — CDN serving JavaScript to 100,000+ sites acquired, immediately weaponized</li>
+<li><strong>Axios (2026)</strong> — compromised npm maintainer account published malicious versions with a post-install payload</li>
 <li><strong>tj-actions/changed-files (2025)</strong> — widely-used GitHub Actions step compromised, CI pipelines across thousands of repos exfiltrating secrets</li>
 </ul>
 
 <p class="muted">The pattern is the same every time: trusted infrastructure becomes the attack vector. The thing that was supposed to be safe is the thing that runs.</p>
 
 <!--
-"Supply chain attacks used to be something that happened to other people — nation-state targets, critical infrastructure, household names. That's not the world we're in anymore.
+"Supply chain attacks used to sound like something that happened to other people — nation-state targets, critical infrastructure, household names. That's not the world we're in anymore.
 
-XZ Utils: a single maintainer, burned out, two years of patient social engineering by an attacker who contributed code, built trust, and then slipped a backdoor into a compression library that was shipping in Debian, Fedora, and Kali. It was caught by accident — a Microsoft engineer noticed slightly elevated SSH login times. If he hadn't, it ships.
+Let me give you the three on the slide, because they're worth knowing by name.
 
-Polyfill.io: a CDN that served JavaScript to over 100,000 websites gets acquired. New owner immediately starts injecting malicious code. The domain itself was the trusted thing. The update mechanism was the attack.
+**XZ Utils, 2024.** Jia Tan — a persona that now appears to have been a nation-state-backed identity — spent roughly two years building trust as a contributor to XZ Utils, a compression library that ships in virtually every Linux distribution. In 2024, that persona introduced a carefully hidden backdoor into the build system — specifically in the M4 autoconf macros used to build the library on Debian- and RPM-based systems. The backdoor was a function hook injected into liblzma that intercepted RSA key operations in OpenSSH when the library was dynamically linked. On the affected systems, anyone holding the right private key could authenticate over SSH without a password. Two years of social engineering. The trust was built slowly, patiently, and with legitimate contributions. The Debian and Fedora unstable and testing branches had already picked up the compromised version. It was caught by Andres Freund at Microsoft — not by any automated scan — when he noticed that SSH logins on his machine were using 500ms more CPU than expected. That's how close it got.
 
-tj-actions: a GitHub Actions step used in CI pipelines across thousands of open-source repos. Compromised in March 2025. Every pipeline that ran it was exfiltrating secrets into public CI logs. Not a exotic target — a utility step that developers treat like a standard library.
+**Axios, 2026.** More recent, and the shape is simpler. An npm maintainer account for the Axios HTTP library — which gets downloaded roughly a billion times a month — was compromised. The attacker published a malicious minor version with a post-install script that executed a payload on every machine that ran `npm install axios`. Installation itself was the delivery step. No exploit required. The package manager ran the code because that's what package managers do when they install something.
 
-The pattern is the same every time. The trusted thing becomes the attack vector. The thing you didn't think twice about is the thing that runs."
+**tj-actions/changed-files, 2025.** A widely-used GitHub Actions step — one of the most-referenced actions in CI configs across the whole GitHub ecosystem, used to detect which files changed in a PR — was compromised. The attacker modified the action to print CI secrets to the job log. Because of how GitHub Actions passes secrets, many pipelines had tokens, API keys, and cloud credentials flowing through jobs that referenced this action. Thousands of repositories were affected. The interesting detail: the compromise happened by injecting into the action's code, not the caller's workflow. Every workflow that pinned to a mutable tag like `@v35` instead of a specific commit SHA got the malicious version automatically.
+
+What connects all three: **trusted infrastructure became the attack vector.** Not a malicious email. Not a misconfigured server. The thing that was supposed to be safe is exactly the thing that ran. And in each case, the compromise had a window — sometimes hours, sometimes months — during which normal builds, normal package installs, and normal CI runs were spreading it.
+
+So the lesson is not 'trust nothing.' It's 'assume the routine-looking thing is exactly where the abuse will hide.'"
 -->
 
 ---
@@ -97,9 +100,9 @@ The pattern is the same every time. The trusted thing becomes the attack vector.
 <p class="muted">The window between "vulnerability disclosed" and "vulnerability exploited" is closing faster than patch cycles. Provenance and receipts don't stop a zero-day — but they tell you which builds are exposed in minutes, not weeks.</p>
 
 <!--
-"The reason supply chain security feels more urgent right now isn't just that attacks are more common. It's that the response window is shrinking.
+"The reason supply-chain security feels more urgent right now isn't just that attacks are more common. It's that the response window is shrinking.
 
-There's a site — zerodayclock.com — that tracks the time between a CVE being published and active exploitation in the wild. Pull it up some time and just watch the numbers. What used to be measured in weeks is now measured in days. Sometimes hours. AI tooling — the same category of thing as what we all use every day for writing code — is being used by attackers to automate exploit variant generation, to scan for affected systems at scale, and to craft payloads faster than any human team could.
+There's a site — zerodayclock.com — that tracks the time between a CVE being published and active exploitation in the wild. Pull it up sometime and just watch the numbers. What used to be measured in weeks is now measured in days. Sometimes hours. AI tooling is being used by attackers to generate variants, scan at scale, and move faster than a human response team can.
 
 This doesn't change what we're building today. Provenance and SBOMs don't stop a zero-day. But they do mean that when the next one drops — and it will — you can run Grype against your stored SBOMs and know in minutes which of your builds are exposed. Not weeks of manual archaeology. Minutes. That's the value of the receipt."
 -->
@@ -128,9 +131,9 @@ PSGallery hosts tens of thousands of modules. CCR serves packages to millions of
 
 As far as anyone has publicly disclosed, neither registry has been compromised at the infrastructure level. That's genuinely good. It's not luck — it's the result of people taking security seriously.
 
-What I'm pointing at is the structural exposure. PSGallery and CCR have the same shape of risk that made XZ Utils dangerous: install-time execution, trust in package authors, dependency on upstream binaries. They have the same shape of risk that made tj-actions dangerous: a broadly trusted artifact that runs automatically in pipelines.
+What I'm pointing at is the structural exposure. PSGallery and CCR still have the same shape of risk that made XZ, Axios, and tj-actions dangerous: install-time execution, trust in package authors, dependency on upstream binaries, and no install-time receipt verification.
 
-The difference is that the PowerShell and Chocolatey ecosystems have less publisher-side tooling around provenance and receipts than npm, cargo, or PyPI. Not because the registries failed — because the tooling hasn't been built yet. That we know of is doing a lot of work in the title of this slide. The honest answer is we don't know what we haven't found.
+The difference is that the publisher-side tools for provenance and receipts are thinner here than in ecosystems like npm or cargo. Not because the registries failed — because the tooling hasn't been built yet. That we know of is doing a lot of work in the title of this slide. The honest answer is we don't know what we haven't found, which is another way of saying the absence of evidence is not evidence of absence.
 
 That's the gap. And that's what we're here to close — on the publisher side, before the package reaches the registry."
 -->
@@ -154,7 +157,9 @@ That's the gap. And that's what we're here to close — on the publisher side, b
 <!--
 "Before we go anywhere near tooling, I want to give you names for six things. Because in my experience — and this might just be me — practitioners know something bad can happen here, but they haven't had the categories put to them plainly. And once you have names for the categories, the defenses fall out naturally.
 
-Six slides. One each. Analogy, real incident, one line on why our ecosystem specifically is susceptible. If you have heard all six and want to zone out for six minutes, I will not be offended. [laugh beat] If you haven't, the rest of the talk assumes these names."
+Six slides. One each. Analogy, real incident, one line on why our ecosystem specifically is susceptible. If you have heard all six and want to zone out for six minutes, I will not be offended. [laugh beat] If you haven't, the rest of the talk assumes these names.
+
+I'm not giving you labels for their own sake. I'm giving you a shared vocabulary for the thing we already know is wrong. Once the room agrees on the shape of the problem, the rest of the talk becomes easier to follow."
 -->
 
 ---
@@ -180,9 +185,9 @@ One dot. Ten million downloads of impersonation surface.
 ### Why it works here
 
 <ul class="quaternary-list">
-<li>PSGallery has no moniker rules — a shared-challenge problem, not a team failing</li>
+<li>PSGallery has no moniker rules — a shared-challenge problem</li>
 <li>npm and cargo have structural name checks; we don't</li>
-<li>MAR (via PSResourceGet/OCI) is the registry-layer answer for <em>Microsoft-published</em> modules — doesn't help community or third-party</li>
+<li>MAR (via PSResourceGet/OCI) is the registry-layer answer for <em>Microsoft-published</em> modules — may not help community or third-party</li>
 </ul>
 
 </div>
@@ -195,9 +200,17 @@ One dot. Ten million downloads of impersonation surface.
 
 Aqua Nautilus did this for real in 2023. They registered `Az.Table` — same letters, extra dot — to impersonate `AzTable`, which at the time had more than ten million downloads. Callbacks from production Azure environments within hours. Not a prank. A proof of concept that worked the first time they tried it.
 
-The reason it worked is that PSGallery, unlike npm, doesn't have moniker rules at the registry layer. That isn't a failing of the PSGallery team. Moniker rules are a big lift, they have false-positive consequences for legitimate forks, and there are reasonable arguments about whether the registry or the publisher should own name hygiene. Shared-challenge problem.
+The reason it worked is that PSGallery, unlike npm, doesn't have moniker rules at the registry layer. That's not a failing of the PSGallery team — and I want to explain why, because it's worth understanding.
 
-Microsoft's in-progress answer at the registry layer — and if you want the deep version, Michael Green and Sydney Smith walked us through it at Summit last year — is the Microsoft Artifact Registry and PSResourceGet going over OCI. Structural fix: only Microsoft can publish under the MAR namespace, so you literally can't squat on `MAR/PSResource/Az.Accounts`. Different layer from this talk. Also not shipped for most of what you install today — only the Azure PowerShell team is fully onboarded, and MAR doesn't help for community packages or third-party vendor modules. Which means if you care whether your package is confusable with someone else's, the check still has to live in your pipeline. We'll do it in forty minutes."
+Moniker rules — rules that say 'this name is too similar to an existing package and we won't accept it' — sound simple but they're genuinely hard to get right. The problem is that **legitimate forks exist**. If you maintain a module, and someone forks it to fix a bug you haven't merged, the fork will often have a closely related name. `Az.Table` and `AzTable` could be a squatter and a victim — or two maintainers who legitimately chose similar names. The registry can't always know which. A false positive blocks a legitimate publisher. A false negative lets the squatter through. And the community gets upset at both outcomes.
+
+It gets harder in an open-source ecosystem with forks. On npm or cargo, there are namespace mechanisms — you publish under your org's scope, so `@mycompany/package` is structurally distinct from `@othercompany/package`. PowerShell's name resolution doesn't have a scope concept like that. Every module in PSGallery is in a flat namespace. Which means the edit distance between a legitimate fork and a typosquat can be exactly one character — and the registry has no structural signal to tell them apart. The whole challenge is distinguishing 'intentional fork' from 'malicious lookalike' using only the name, the metadata, and whatever download history exists.
+
+So when I say 'shared-challenge problem,' I mean it: the registry can implement heuristics and flag suspicious names for human review, but without a scope system or cryptographic publisher identity, there's a hard ceiling on what automated name rules can do. CCR moderators actually shoulder a significant part of this for community packages — human review catches things the automation can't.
+
+Microsoft's in-progress answer at the registry layer is the Microsoft Artifact Registry and PSResourceGet over OCI. Structural fix: only Microsoft can publish under the MAR namespace, so you literally can't squat on `MAR/PSResource/Az.Accounts`. Different layer from this talk. Also not shipped for most of what you install today — only the Azure PowerShell team is fully onboarded, and MAR doesn't help for community packages or third-party vendor modules. Which means if you care whether your package is confusable with someone else's, the check still has to live in your pipeline."
+
+In practice, this is why I don't treat typosquat prevention as a registry-only problem. Registry support is great when it exists, but the maintainer still needs a pre-publish signal that says 'this name is dangerously close to something else' before the package gets out the door."
 -->
 
 ---
@@ -221,7 +234,13 @@ Public PSGallery: AcmeSecrets v9.9.9   ← higher version wins
 <!--
 "Second one. **Dependency confusion.** Close cousin of name confusion. Your org has an internal package — call it `AcmeSecrets`. It lives on an internal feed. An attacker notices you reference it in a public job log, in a workflow file, in a screenshot on a conference talk. [laugh beat] The attacker publishes a package with the same name to the public registry, with a higher version number. Next time your CI installs dependencies, the resolver picks the higher version. The higher version happens to be the attacker's.
 
-Alex Birsan demonstrated this in 2021 against Apple, Microsoft, Tesla, PayPal, Shopify, Netflix, and a long list of others. Ten-thousand-dollar bug bounties all around. The PowerShell ecosystem has the same shape of risk the moment you have private modules with names that could be squatted publicly. The defense is to scope your resolver explicitly — the internal feed is authoritative for internal names, and those names aren't resolvable externally even by accident. Publisher-side discipline question. The pipeline's job is to remind you when you've forgotten."
+Alex Birsan demonstrated this in 2021 against Apple, Microsoft, Tesla, PayPal, Shopify, Netflix, and a long list of others. Ten-thousand-dollar bug bounties all around. The PowerShell ecosystem has the same shape of risk the moment you have private modules with names that could be squatted publicly.
+
+The defense is to scope your resolver explicitly — the internal feed is authoritative for internal names, and those names aren't resolvable externally even by accident.
+
+And here Chocolatey actually has a useful mechanism worth knowing: **source priority.** When you have Chocolatey configured with multiple sources — say an internal Nexus or Artifactory repo alongside the public CCR — you can set a priority on each source. Lower numbers win. If your internal feed is priority 1 and CCR is priority 100, the resolver reaches your internal feed first for every package name. If `AcmeSecrets` exists at priority 1, the resolver never even asks CCR for it, regardless of version number. This is not a perfect defense — you still have to name your internal packages thoughtfully, and source priority can be misconfigured — but it's a concrete tool that exists today for Chocolatey environments. `choco source add --name internal --source https://your-nexus/repo --priority 1`. Publisher-side discipline question; the pipeline's job is to remind you when you've forgotten.
+
+The painful part is how ordinary the mistake looks. Nobody has to be reckless. A build log, a pasted command, a debug screenshot, and suddenly your internal package name is public enough for somebody else to race you to the registry."
 -->
 
 ---
@@ -243,13 +262,23 @@ Install-ChocolateyPackage -Url $url # no checksum, no integrity guarantee
 <p class="muted">Every vendor wrapping a <code>.exe</code> installer does some version of this. The question isn't whether you download-and-execute — it's whether you pin what you downloaded against a hash you trusted at build time.</p>
 
 <!--
-"Third one. **Download-and-execute.** The install script fetches something at install time and runs it. The thing being fetched is not what was reviewed. The thing being reviewed is the *code that fetches*, not the code that runs.
+"Third one. **Download-and-execute.** Let me explain the concept before we name the incident, because I want the pattern to be clear.
 
-This is the pattern. Hardcoded URL. `Invoke-WebRequest` into a variable. `Invoke-Expression` on the variable. Or the Chocolatey equivalent — `Install-ChocolateyPackage` with a URL but no checksum. Four lines. Each line on its own is legal PowerShell. Each line on its own is something you have probably written. The chain of four is remote code execution with no integrity guarantee.
+When you install a package, you typically expect the package to *contain* the code it runs. You reviewed what's in the package. You trust what's in the package. But download-and-execute breaks that assumption: the package contains a *script that fetches something* at install time, and then *runs that fetched thing*. The reviewed artifact — the thing you submitted to CCR, the thing the moderator looked at — is the fetching code. Not the executed code. Those are two different things, and only one of them is what actually runs on the end user's machine.
 
-Real incident: Serpent, 2022, targeting French organizations. Attackers used Chocolatey completely legitimately — installed Python through the real Chocolatey infrastructure — and then their own downstream tooling, running in the already-elevated context Chocolatey installs kick off, reached out and pulled a backdoor hidden in an image. Steganography. Chocolatey wasn't compromised. The pipeline around it had no idea what was executing.
+That's the gap. You reviewed the courier. You didn't review what was in the envelope. And the envelope arrives at install time, from a URL you don't control.
 
-The point I want you to sit with is that download-and-execute isn't exotic. It's normalized. Every vendor that ships a Chocolatey package wrapping a `.exe` installer is doing some version of this. The question isn't whether you download-and-execute. It's whether you pin what you downloaded against a hash you trusted at build time."
+The pattern looks like this. Hardcoded URL. `Invoke-WebRequest` into a variable. `Invoke-Expression` on the variable. Or the Chocolatey equivalent: `Install-ChocolateyPackage` with a URL but no `-Checksum` parameter. Four lines. Each line on its own is legal PowerShell. Each line on its own is something you've probably written for a totally valid reason. The chain of four is remote code execution with no integrity guarantee at install time.
+
+Now the incident. **Serpent, 2022.** This campaign targeted French entities — construction and real estate companies — in what appears to have been a targeted espionage operation. The attackers sent phishing emails containing Chocolatey install commands. When the recipient ran them, Chocolatey did exactly what Chocolatey is supposed to do: it installed Python. Completely legitimate. Real Python, from the real infrastructure, no compromise in Chocolatey itself.
+
+But the attackers had also planted tools that, once Python was installed and running in that already-elevated administrative context that Chocolatey operates in, reached out over the network to fetch a second-stage payload. That payload was hidden inside an image file using steganography — a technique where data is concealed within the pixel values of an ordinary-looking image. The image looked like a picture. The tools extracted a backdoor from it.
+
+At no point did a security tool flag Chocolatey's behavior as malicious, because Chocolatey's behavior wasn't malicious. The install looked legitimate. The image looked legitimate. The malicious part was the *combination* — the trusted tool, the elevated context, and the unaudited network fetch that happened after the package ran.
+
+The point I want you to sit with is that download-and-execute isn't exotic. It's normalized. Every vendor that ships a Chocolatey package wrapping a `.exe` installer is doing some version of this. The question isn't whether you download-and-execute. It's whether you pin what you downloaded against a hash you trusted at build time — before the package left your hands — so that the thing that runs on the end user's machine is provably the thing you tested."
+
+This is why I keep repeating 'build time' instead of 'install time.' Once the machine is already executing the script, you've lost the best chance to prove what was supposed to happen. The only place you still have enough context to validate the fetch is before you publish."
 -->
 
 ---
@@ -280,6 +309,8 @@ Look at this `.psd1`. `RequiredModules` with `ModuleVersion = '2.0.0'`. That is 
 If you came from npm or cargo or Go, you already know what a lockfile is — a byte-identical pin of every transitive dependency, checked into source, applied at install. `package-lock.json`. `Cargo.lock`. `go.sum`. PowerShell doesn't have this. Not a missing feature about to ship — a genuinely unsolved ecosystem problem. Which means every PowerShell SBOM you have ever seen is describing *the author's build*, not *the consumer's install*. We're going to name that gap again later, because it changes what our receipts actually mean.
 
 No attacker required here. Normal day, different resolution, potentially different behavior. The attacker version is when a transitive dependency quietly changes ownership and the new owner decides to test what happens when a popular module starts calling home. Which has happened in every other ecosystem. [laugh beat] Just not to us yet. That we know of."
+
+This is the kind of bug that slips through because nothing looks broken. The build passes. The package installs. The only thing that changed is the resolver. That's exactly why it belongs in the talk about receipts."
 -->
 
 ---
@@ -292,7 +323,7 @@ vendor source → [ compromised build env ] → signed installer → your packag
                             ↑ backdoored before signing
 ```
 
-**3CX, 2023.** Attackers compromised the vendor's build pipeline. The signed installer the vendor distributed was already malicious. Every Chocolatey package pointing at the official 3CX URL — including perfectly well-maintained ones — was distributing malware.
+**3CX, 2023.** Attackers compromised the vendor's build pipeline. The signed installer the vendor distributed was already malicious. Every package pointing at the official 3CX URL — including perfectly well-maintained ones — was distributing malware.
 
 <p class="muted">Defense is in-depth: pin hashes at build time, detect drift, keep historical artifacts re-verifiable, and have provenance that answers "which of my builds consumed the bad upstream." None stops 3CX alone. All together make the cleanup tractable.</p>
 
@@ -304,6 +335,8 @@ The attacker doesn't compromise the package. They don't compromise the vendor's 
 Canonical incident: 3CX, 2023. Attackers compromised the build pipeline of a VoIP desktop app with around twelve million users. The signed installer the vendor distributed was already malicious. Every Chocolatey package that pointed at the official 3CX download URL — including perfectly well-maintained, well-intentioned ones — was distributing malware. The maintainers did nothing wrong. The checksums they had documented matched the file the vendor was serving. The file the vendor was serving was what the vendor meant to serve. The problem was one layer upstream.
 
 The only defense here is in depth: pin hashes at build time, detect drift when they change, keep historical artifacts re-verifiable, and have provenance that lets you answer 'which of my builds consumed the bad upstream version.' None of those individually would have stopped 3CX. All of them together make the cleanup tractable instead of impossible."
+
+This is the category that makes people stop and stare because it breaks the normal trust chain. The vendor is not malicious, the installer is signed, the checksum matches, and the compromise still lands. That's why receipt generation has to happen before the vendor artifact becomes your package."
 -->
 
 ---
@@ -389,11 +422,13 @@ The malicious version of that is 3CX — the URL still looks right, the vendor i
 <!--
 "Before we pivot to tooling, I want to spend a slide on what the registries are already doing, because I think the shared narrative in our industry has been unfair to them.
 
-The Chocolatey Community Repository runs a Validator for nuspec, script structure, and metadata rules. It runs a Verifier that actually performs install, uninstall, dependency checks, and silent-install verification in a reference VM — which is not free to operate. It runs Package Scanner through VirusTotal. It has a human moderation pass for non-trusted packages. Most of that is volunteer time.
+The Chocolatey Community Repository runs a Validator for nuspec, script structure, and metadata rules. It runs a Verifier that actually performs install, uninstall, dependency checks, and silent-install verification in a reference VM — which is not free to operate. It runs Package Scanner through VirusTotal. It has a human moderation pass for non-trusted packages.
+
+And I want to be explicit about something that's easy to gloss over: **most of that is volunteer time.** The people who moderate packages on CCR are doing it on top of day jobs, evenings, weekends. When you submit a package to CCR and a human reviews it, that's a person who chose to spend their Saturday on your package. I want to say plainly that I have enormous respect for what the CCR moderation team has built and continues to maintain. The same is true for the PowerShell Gallery team — every PSScriptAnalyzer run, every AV scan, every validation check is infrastructure someone wrote and someone keeps running. It doesn't happen for free. It happens because people in this community care enough to make it happen.
 
 PowerShell Gallery runs manifest validation, installation testing during validation, antivirus scanning, and PSScriptAnalyzer at error level on every upload. That's a non-trivial amount of automated scrutiny on every module that lands.
 
-This is real infrastructure. I am not recommending you skip it. I am not recommending the pipeline we're about to build replaces it. What I *am* recommending is that by the time your package arrives at one of these registries, you can hand the moderator three things they don't currently receive: an SBOM, scan results, and a provenance document. Because the registries can't generate those retroactively — the source of truth is in the publisher's pipeline, and the publisher is *us*. [laugh beat: point at room] The receipts are ours to produce. That's the premise of the rest of the talk."
+This is real infrastructure. I am not recommending you skip it. I am not recommending the pipeline we're about to build replaces it. What I *am* recommending is that by the time your package arrives at one of these registries, you can hand the moderator three things they don't currently receive: an SBOM, scan results, and a provenance document. Not to make their jobs harder — to make their jobs faster. Because the registries can't generate those retroactively — the source of truth is in the publisher's pipeline, and the publisher is *us*. [laugh beat: point at room] The receipts are ours to produce. That's the premise of the rest of the talk."
 -->
 
 ---
@@ -579,9 +614,13 @@ The SBOM records what *I shipped*. It does not record what resolves on *your* ma
 <!--
 "SBOM next. CycloneDX JSON, generated by Syft against the module directory. Components array. PURLs. Resolved versions. File hashes. Useful as an audit trail.
 
-Now the honest part — this is the lockfile gap from Act I finally landing. This SBOM records what *I shipped*. It does *not* record what resolves on the consumer's machine when they `Install-Module` this thing. PowerShell has no lockfile. `Install-Module` resolves `RequiredModules` at install time against whatever is currently the highest-satisfying version in PSGallery. I ship Monday. You install Tuesday. Your dependency graph might differ from mine. My SBOM tells you what I built. It doesn't tell you what ran on your machine.
+Syft is the inventory pass. It walks the directory, figures out what packages and files are there, and emits a machine-readable bill of materials. In plain English: it tells you what is in the box. It does not tell you whether the box is safe. That distinction matters.
 
-That is the single biggest unsolved problem in PowerShell supply chain security today, and I want to be clear: nobody on stage or in the registry team has a clever fix hiding in their back pocket. Not me. Not PSGallery. Not Microsoft. The current workaround is to pin `RequiredVersion` — exact version — instead of `ModuleVersion`, and enforce with `dependency-pin-check`. Maintainer-side commitment, not a consumer-side guarantee. We come back to this in Act III."
+Now the honest part. This SBOM records what I shipped. It does *not* record what resolves on the consumer's machine when they `Install-Module` this thing. PowerShell has no lockfile. `Install-Module` resolves `RequiredModules` at install time against whatever is currently the highest-satisfying version in PSGallery. I ship Monday. You install Tuesday. Your dependency graph might differ from mine. My SBOM tells you what I built. It doesn't tell you what ran on your machine.
+
+That is the single biggest unsolved problem in PowerShell supply chain security today. The current workaround is to pin `RequiredVersion` — exact version — instead of `ModuleVersion`, and enforce with `dependency-pin-check`. Maintainer-side commitment, not a consumer-side guarantee. One practical thing to say out loud: the SBOM becomes really valuable when something goes wrong later. If a CVE drops, or incident response needs to know which releases were exposed, the SBOM gives you a fast answer without rebuilding the world or re-scanning every source repo from scratch."
+
+The other way to say it is that the SBOM is your inventory control sheet. It answers 'what did I put in the package?' and gives incident responders something they can query later without re-running the whole build just to answer a basic question."
 -->
 
 ---
@@ -601,9 +640,13 @@ When a CVE drops six months from now, you re-run Grype against the stored SBOM a
 </div>
 
 <!--
-"Grype reads the SBOM from the previous step. Runs it against NVD and the GitHub Advisory Database. Findings go back into Code Scanning.
+"Grype is the second half of the pair. Syft inventories what is there; Grype looks at that inventory and asks whether any of the components have known vulnerabilities. It reads the SBOM, matches packages and versions against vulnerability data, and reports the results back into Code Scanning.
 
-Build-time value: obvious. Less-obvious value: retroactive. The SBOM is retained as an artifact for a year by default. When a CVE drops six months from now against a dependency you shipped, you re-run Grype against the stored SBOM from that release and you know in seconds which builds were affected. That is incident response, not prevention. Both matter — and in my experience, in an enterprise, the incident-response case is what actually gets this pipeline funded, not the build-time gating. Because leadership has sat through the other kind of incident, the one where you're trying to figure out *after the fact* whether a given build is exposed, and nobody has an answer, and everybody stays late. [laugh beat, knowing]"
+That split is worth calling out because it keeps the steps honest. Inventory is still inventory, and vulnerability scanning is still vulnerability scanning. When people collapse both into one vague 'scan' word, they lose the point of each tool.
+
+Build-time value is obvious. The less-obvious value is retroactive. The SBOM is retained as an artifact for a year by default. When a CVE drops six months from now against a dependency you shipped, you re-run Grype against the stored SBOM from that release and you know in seconds which builds were affected. That's incident response, not prevention. Both matter — and in my experience the incident-response case is what gets this pipeline funded in an enterprise, not the build-time gating."
+
+That retroactive angle is the thing people underestimate. You are not just scanning today; you're creating a record you can come back to when the next advisory lands and somebody asks, 'which releases are we on the hook for?'"
 -->
 
 ---
@@ -630,13 +673,57 @@ Build-time value: obvious. Less-obvious value: retroactive. The SBOM is retained
 </div>
 
 <!--
-"Provenance. Source repo, commit SHA, workflow reference, artifact hash, timestamp. Here's the receipt.
+"Provenance. Here's the receipt. And I want to spend a few minutes on what this actually means — not just the JSON — because it's the piece of this talk that tends to land as vague unless I explain the model carefully.
 
-Now. Who's reading this receipt? `Install-Module` doesn't check it. `choco install` doesn't check it. The registries don't require it at upload. No install-time verifier ships in the ecosystem today. I produce the provenance. The consumer never asks to see it.
+**What is provenance, concretely?**
 
-That is a real problem with the current state of this, and I'm not going to pretend it isn't. What I can say is the provenance is useful *to the maintainer* right now. If a customer ever asks 'can you prove the module you shipped on this date came from this commit and was built by this pipeline,' I can answer. If an incident happens and I need to establish definitively which build produced which artifact, I have it. That's maintainer-side audit value — real, but narrower than an end-to-end story.
+Provenance is the documented, verifiable answer to: where did this artifact come from, and can you prove it? Think of it like chain of custody in a legal context. A police department doesn't just say 'we have this evidence.' They have a log: who collected it, when, under what circumstances, who transferred it, who had it at each step. If the chain breaks — if there's an unexplained gap — the evidence is tainted. Provenance for software artifacts is the same idea: source repo, source commit, workflow name, build time, the hash of the artifact that came out the other end.
 
-The full loop closes when the registries require signed provenance at upload and the install tooling verifies at install. Both are ecosystem-scale asks. Not my pipeline's problem to solve, and frankly, not any single pipeline's problem to solve. What I can do in the meantime is produce the receipts now, so the day a verifier ships, my back catalog is ready to be read. That's the bet."
+**Where does SLSA fit in?**
+
+SLSA — Supply-chain Levels for Software Artifacts, pronounced 'salsa' — is a framework from Google that defines a graduated set of requirements for supply chain integrity. Think of it like a rating system. Level 0 is no guarantees at all. Level 1 means the build process is documented and provenance is generated. Level 2 means the provenance is produced by a hosted build system — like GitHub Actions — and is *signed* by that system so you can prove it wasn't generated by the developer on their laptop after the fact and uploaded manually. Level 3 adds requirements about the build environment itself: hardened runners, no persistent credentials, build instructions defined in reusable workflows outside the repository so they get organizational vetting before they run.
+
+What we're producing with `actions/attest-build-provenance` is SLSA v1.0 Build Level 2 by default. That's meaningful. It means the provenance document was produced and signed by GitHub's hosted runner infrastructure, not by you. The attestation is evidence that a specific CI system produced a specific artifact — not a claim you're making about yourself.
+
+**The Sigstore mechanism — how the signing actually works**
+
+This is the part that's worth understanding at least once, because it's not obvious.
+
+When the attestation step runs, here's what happens under the hood:
+
+1. The GitHub Actions job has an OIDC token — a short-lived, job-scoped identity token that proves 'this is workflow run X on repo Y at time Z.'
+2. That token is used to request a short-lived X.509 signing certificate from Fulcio — Sigstore's certificate authority. The certificate is issued to the workflow identity, not a person.
+3. A keypair is generated. The private key is used to sign the provenance statement — which is formatted as an in-toto attestation, a standard format for supply-chain metadata. The statement is also counter-signed by a Timestamp Authority, so the signing time is provably recorded.
+4. Then — and this is the important part — **the private key is destroyed.** It cannot be recovered. It existed only long enough to sign this one statement.
+5. The Sigstore bundle (signed statement + certificate chain) is stored in GitHub's attestation store. For public repos, it's also written to the Sigstore Public Good Instance — a public, append-only transparency log.
+
+Why does the key destruction matter? Because it means the provenance cannot be forged or backdated later, even if someone with full repo admin access wanted to. The signing event was a one-time, ephemeral operation tied to that specific CI run. You can't sign something 'as' a past build.
+
+A consumer runs `gh attestation verify <artifact> -R owner/repo` and gets back confirmation that this exact file — matched by SHA-256 hash — was produced by the named workflow on that repo. If the hash doesn't match the artifact's current state, verification fails. That's the guarantee.
+
+**A caveat that matters for our ecosystem: the registry modification problem**
+
+Andrew Lock wrote about this in detail for NuGet packages, and I want to flag it because the same question applies here.
+
+When NuGet.org accepts a package upload, it *modifies* the package — it adds a `.signature.p7s` file before serving it to consumers. That changes the SHA-256 hash of the package. Which means the GitHub attestation you generated before upload — which was computed against the original file hash — no longer matches what a consumer downloads. The verification breaks. The artifact the consumer has is not the artifact the attestation was signed against.
+
+The workaround for NuGet is to strip the `.signature.p7s` before verifying. But the larger point is: **does PSGallery or CCR modify packages after upload?** I don't have a definitive answer for both registries right now. It's a question worth asking the teams directly — and if you're in the room and you know, I'd genuinely like to know. Because if the registry transforms the artifact in any way between publisher upload and consumer download, the chain of custody has a gap in it, and the attestation story gets more complicated.
+
+**What this doesn't do**
+
+I want to be honest. This JSON on screen is not magic. It doesn't make your package more secure at install time, because nothing in the current PSGallery or CCR install flow reads it. `Install-Module` doesn't check it. `choco install` doesn't check it. No install-time verifier ships in the ecosystem today.
+
+I produce the provenance. The consumer never asks to see it.
+
+That's a real gap, and I'm not going to dress it up. What I can say is the provenance is immediately useful to the *maintainer*. If a customer asks 'can you prove the version you shipped on this date came from this commit and was built by this pipeline' — I can answer. Not with a handwave. With a cryptographically signed document that a verifier can check. If an incident happens and I need to establish definitively which build produced which artifact — I can.
+
+**The bet**
+
+The full loop closes when the registries require signed provenance at upload and the install clients verify at install time. Both are ecosystem-scale asks — they require registry policy changes, client changes, and backward-compatibility work. The PSResourceGet team's direction with MAR and OCI is pointing toward this. It's not shipped everywhere yet.
+
+What I can do in the meantime is produce the receipts now, so that when a verifier eventually ships, my back catalog is already signed and readable. The cost of doing it today is minimal. The cost of retroactively generating provenance for releases you already shipped is that you can't — the original build environment and its OIDC token are long gone. Sign it at the moment of build, or accept that you'll never be able to."
+
+This is the part that sounds abstract until you have an incident and everyone wants to know whether the thing in prod came from the commit you think it did. Provenance is how you answer that without a forensic scramble."
 -->
 
 ---
@@ -723,6 +810,8 @@ Not a contrived example. This is the shape of something I have personally helped
 Cheap to run. Narrow in what it catches — won't stop a determined attacker who has already published, but it catches accidental name collisions before *you* publish, and surfaces potential typosquat neighbors for reviewers.
 
 I want to be precise about what this is: this is *our* pipeline doing these checks. This is not a CCR moderation phase. CCR has its own validator rules. We're front-running some of them so the feedback lands in your PR instead of in a moderation queue.
+
+Levenshtein itself is just edit distance — how many inserts, deletes, or substitutions it takes to turn one string into another. That's what makes it useful here: it catches lookalike names that humans routinely miss when they're typing package names by hand. It won't stop a determined attacker, and it won't prove intent, but it does catch the typo-shaped mistakes that turn into embarrassing publishes.
 
 Not going to spend long on this. Cheapest check in the pipeline. Moving on."
 -->
@@ -927,6 +1016,8 @@ That's the talk. Receipts are useful even when nobody reads them — until the d
 
 <p class="name wide">Adil Leghari</p>
 <p class="handle wide">github.com/adilio/publish-with-receipts</p>
+
+![QR code for github.com/adilio/publish-with-receipts w:200 h:200](https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://github.com/adilio/publish-with-receipts)
 
 <!--
 *Pause. Look up. Don't fill the silence.*
