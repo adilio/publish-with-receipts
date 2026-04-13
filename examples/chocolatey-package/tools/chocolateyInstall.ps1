@@ -3,6 +3,9 @@
 # THIS FILE CONTAINS INTENTIONAL SECURITY ANTI-PATTERNS for demonstration.
 # Each flaw is labelled with the Semgrep rule / pipeline check that detects it.
 #
+# This file is intentionally edited for the demo PR so the Chocolatey
+# security workflow runs and uploads SARIF annotations.
+#
 # This script runs with ELEVATED PRIVILEGE (admin) when 'choco install' is called.
 
 $ErrorActionPreference = 'Stop'
